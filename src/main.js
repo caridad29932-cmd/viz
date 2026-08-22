@@ -63,6 +63,7 @@ const progressSubtitle = document.getElementById('progress-subtitle');
 const progressCancelBtn = document.getElementById('progress-cancel-btn');
 
 let exportAbortController = null;
+let isExporting = false;
 
 const mediaUrlRegistry = new Map(); // clipId -> objectUrl for cleanup
 
@@ -413,7 +414,6 @@ function bindControls() {
     if (zoomLevelEl) zoomLevelEl.textContent = `${Math.round(multiTimeline.zoomLevel * 100)}%`;
   });
 
-  if (btnExport) btnExport.addEventListener('click', handleExport);
 
   if (previewRatioSelectEl) {
     previewRatioSelectEl.addEventListener('change', () => {
@@ -475,9 +475,14 @@ async function handleExport() {
     return;
   }
 
-  if (exportAbortController) {
-    exportAbortController.abort();
+  if (isExporting) {
+    showToast('Export already in progress', 'info');
+    return;
   }
+
+  isExporting = true;
+  if (btnExport) btnExport.disabled = true;
+
   exportAbortController = new AbortController();
   const signal = exportAbortController.signal;
 
@@ -527,6 +532,8 @@ async function handleExport() {
     showToast(`Export failed: ${msg}`, 'error', 6000);
   } finally {
     exportAbortController = null;
+    isExporting = false;
+    if (btnExport) btnExport.disabled = false;
     if (progressCancelBtn) progressCancelBtn.disabled = true;
   }
 }
