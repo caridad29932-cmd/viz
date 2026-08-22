@@ -208,8 +208,10 @@ export class CanvasPreview {
   _renderTextClip(ctx, clip) {
     if (!clip.text) return;
 
-    ctx.font = `${clip.fontSize}px ${clip.fontFamily || 'Inter'}, sans-serif`;
-    ctx.textAlign = clip.textAlign || 'center';
+    const align = clip.textAlign || 'center';
+    const weight = clip.fontWeight === 'bold' ? 'bold ' : '';
+    ctx.font = `${weight}${clip.fontSize}px ${clip.fontFamily || 'Inter'}, sans-serif`;
+    ctx.textAlign = align;
     ctx.textBaseline = 'middle';
 
     const lines = clip.text.split('\n');
@@ -217,14 +219,17 @@ export class CanvasPreview {
     const totalHeight = lines.length * lineHeight;
     const startY = clip.y + clip.height / 2 - totalHeight / 2 + lineHeight / 2;
 
+    let maxWidth = 0;
+    for (const line of lines) {
+      const m = ctx.measureText(line);
+      if (m.width > maxWidth) maxWidth = m.width;
+    }
+
     if (clip.bgColor && clip.bgColor !== 'transparent') {
-      let maxWidth = 0;
-      for (const line of lines) {
-        const m = ctx.measureText(line);
-        if (m.width > maxWidth) maxWidth = m.width;
-      }
       const padding = 12;
-      const bgX = clip.x + clip.width / 2 - maxWidth / 2 - padding;
+      const bgX = align === 'left' ? clip.x :
+                  align === 'right' ? clip.x + clip.width - maxWidth - padding * 2 :
+                  clip.x + clip.width / 2 - maxWidth / 2 - padding;
       const bgY = clip.y + clip.height / 2 - totalHeight / 2 - padding;
       ctx.fillStyle = clip.bgColor;
       ctx.fillRect(bgX, bgY, maxWidth + padding * 2, totalHeight + padding * 2);
@@ -233,8 +238,8 @@ export class CanvasPreview {
     ctx.fillStyle = clip.color || '#ffffff';
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
-      const x = clip.textAlign === 'left' ? clip.x + 10 :
-                clip.textAlign === 'right' ? clip.x + clip.width - 10 :
+      const x = align === 'left' ? clip.x + 10 :
+                align === 'right' ? clip.x + clip.width - 10 :
                 clip.x + clip.width / 2;
       const y = startY + i * lineHeight;
       ctx.fillText(line, x, y);

@@ -104,6 +104,12 @@ export class PropertiesPanel {
       setVal('prop-text-bg', bgColor);
       const bgTrans = document.getElementById('prop-text-bg-transparent');
       if (bgTrans) bgTrans.checked = clip.bgColor === 'transparent';
+      const alignBtns = this.container.querySelectorAll('#prop-text-align .seg-btn');
+      alignBtns.forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.align === (clip.textAlign || 'center'));
+      });
+      const boldEl = document.getElementById('prop-text-bold');
+      if (boldEl) boldEl.checked = clip.fontWeight === 'bold';
     }
 
     const hasAudio = clip.type === 'video' || clip.type === 'audio';
@@ -179,7 +185,7 @@ export class PropertiesPanel {
           <span class="prop-section-title">TEXT STYLING</span>
           <div class="prop-row-col">
             <label>Text Content</label>
-            <input type="text" id="prop-text-content" value="${safeText}">
+            <textarea id="prop-text-content" rows="4">${safeText}</textarea>
           </div>
           <div class="prop-row">
             <label>Font Size</label>
@@ -196,6 +202,22 @@ export class PropertiesPanel {
             </select>
           </div>
           <div class="prop-row">
+            <label>Custom Font</label>
+            <input type="file" id="prop-text-font-file" accept=".ttf,.otf,.woff,.woff2">
+          </div>
+          <div class="prop-row">
+            <label>Align</label>
+            <div class="prop-segmented" id="prop-text-align">
+              <button type="button" class="seg-btn ${clip.textAlign === 'left' ? 'active' : ''}" data-align="left">L</button>
+              <button type="button" class="seg-btn ${clip.textAlign === 'center' ? 'active' : ''}" data-align="center">C</button>
+              <button type="button" class="seg-btn ${clip.textAlign === 'right' ? 'active' : ''}" data-align="right">R</button>
+            </div>
+          </div>
+          <div class="prop-row">
+            <label>Bold</label>
+            <input type="checkbox" id="prop-text-bold" ${clip.fontWeight === 'bold' ? 'checked' : ''}>
+          </div>
+          <div class="prop-row">
             <label>Text Color</label>
             <input type="color" id="prop-text-color" value="${clip.color}">
           </div>
@@ -207,7 +229,6 @@ export class PropertiesPanel {
             <label>Transparent BG</label>
             <input type="checkbox" id="prop-text-bg-transparent" ${clip.bgColor === 'transparent' ? 'checked' : ''}>
           </div>
-        </div>
         ` : ''}
 
         ${hasAudio ? `
@@ -422,6 +443,49 @@ export class PropertiesPanel {
     if (fontSelect) {
       fontSelect.addEventListener('change', () => {
         clip.fontFamily = fontSelect.value;
+        this.comp.saveSnapshot();
+        if (this.onChange) this.onChange();
+      });
+    }
+
+    const fontFileEl = document.getElementById('prop-text-font-file');
+    if (fontFileEl) {
+      fontFileEl.addEventListener('change', () => {
+        const file = fontFileEl.files[0];
+        if (!file) return;
+        const customName = 'custom-font-' + Date.now();
+        const url = URL.createObjectURL(file);
+        const face = new FontFace(customName, `url(${url})`);
+        face.load().then(() => {
+          document.fonts.add(face);
+          clip.fontFamily = customName;
+          clip.customFontUrl = url;
+          this.comp.saveSnapshot();
+          if (this.onChange) this.onChange();
+          showToast(`Custom font loaded: ${file.name}`, 'success');
+        }).catch((err) => {
+          showToast('Failed to load custom font: ' + file.name, 'error');
+          console.error(err);
+        }).finally(() => {
+          fontFileEl.value = '';
+        });
+      });
+    }
+
+    const alignBtns = this.container.querySelectorAll('#prop-text-align .seg-btn');
+    alignBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        clip.textAlign = btn.dataset.align;
+        alignBtns.forEach(b => b.classList.toggle('active', b === btn));
+        this.comp.saveSnapshot();
+        if (this.onChange) this.onChange();
+      });
+    });
+
+    const boldEl = document.getElementById('prop-text-bold');
+    if (boldEl) {
+      boldEl.addEventListener('change', () => {
+        clip.fontWeight = boldEl.checked ? 'bold' : 'normal';
         this.comp.saveSnapshot();
         if (this.onChange) this.onChange();
       });
