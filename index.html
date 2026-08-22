@@ -16,6 +16,23 @@
   </script>
   <script src="./coi-serviceworker.js" id="coi-script"></script>
 
+  <!--
+    GitHub Pages path fix: if this file is served raw from /viz/ instead of the
+    built dist/, patch the main module and COI worker to absolute /viz/ paths
+    BEFORE the browser requests them. Vite normally rewrites these at build time.
+  -->
+  <script>
+    (function() {
+      const base = '/viz/';
+      if (location.pathname.startsWith(base)) {
+        const main = document.getElementById('main-script');
+        const coi = document.getElementById('coi-script');
+        if (main) main.src = base + 'src/main.js';
+        if (coi) coi.src = base + 'coi-serviceworker.js';
+      }
+    })();
+  </script>
+
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
