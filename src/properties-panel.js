@@ -454,21 +454,29 @@ export class PropertiesPanel {
         const file = fontFileEl.files[0];
         if (!file) return;
         const customName = 'custom-font-' + Date.now();
-        const url = URL.createObjectURL(file);
-        const face = new FontFace(customName, `url(${url})`);
-        face.load().then(() => {
-          document.fonts.add(face);
-          clip.fontFamily = customName;
-          clip.customFontUrl = url;
-          this.comp.saveSnapshot();
-          if (this.onChange) this.onChange();
-          showToast(`Custom font loaded: ${file.name}`, 'success');
-        }).catch((err) => {
-          showToast('Failed to load custom font: ' + file.name, 'error');
-          console.error(err);
-        }).finally(() => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const dataUrl = reader.result;
+          const face = new FontFace(customName, `url(${dataUrl})`);
+          face.load().then(() => {
+            document.fonts.add(face);
+            clip.fontFamily = customName;
+            clip.customFontUrl = dataUrl;
+            this.comp.saveSnapshot();
+            if (this.onChange) this.onChange();
+            showToast(`Custom font loaded: ${file.name}`, 'success');
+          }).catch((err) => {
+            showToast('Failed to load custom font: ' + file.name, 'error');
+            console.error(err);
+          }).finally(() => {
+            fontFileEl.value = '';
+          });
+        };
+        reader.onerror = () => {
+          showToast('Failed to read custom font: ' + file.name, 'error');
           fontFileEl.value = '';
-        });
+        };
+        reader.readAsDataURL(file);
       });
     }
 

@@ -205,8 +205,22 @@ export class CanvasPreview {
     } catch (e) {}
   }
 
+  async _loadCustomFont(clip) {
+    if (!clip.customFontUrl || !clip.fontFamily) return;
+    if (document.fonts.check(`${clip.fontSize}px "${clip.fontFamily}"`)) return;
+    try {
+      const face = new FontFace(clip.fontFamily, `url(${clip.customFontUrl})`);
+      await face.load();
+      document.fonts.add(face);
+    } catch (err) {
+      console.warn('Failed to load custom font:', clip.fontFamily, err);
+    }
+  }
+
   _renderTextClip(ctx, clip) {
     if (!clip.text) return;
+
+    this._loadCustomFont(clip);
 
     const align = clip.textAlign || 'center';
     const weight = clip.fontWeight === 'bold' ? 'bold ' : '';
