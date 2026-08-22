@@ -210,7 +210,8 @@ export class CanvasPreview {
 
     const align = clip.textAlign || 'center';
     const weight = clip.fontWeight === 'bold' ? 'bold ' : '';
-    ctx.font = `${weight}${clip.fontSize}px ${clip.fontFamily || 'Inter'}, sans-serif`;
+    const fontFamily = clip.customFontUrl ? `"${clip.fontFamily || 'Inter'}"` : (clip.fontFamily || 'Inter');
+    ctx.font = `${weight}${clip.fontSize}px ${fontFamily}, sans-serif`;
     ctx.textAlign = align;
     ctx.textBaseline = 'middle';
 

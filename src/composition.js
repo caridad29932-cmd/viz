@@ -100,6 +100,8 @@ export class Composition {
       text: clipData.text || 'Sample Text',
       fontSize: clipData.fontSize || 64,
       fontFamily: clipData.fontFamily || 'Inter',
+      customFontUrl: clipData.customFontUrl || null,
+      fontWeight: clipData.fontWeight || 'normal',
       color: clipData.color || '#ffffff',
       bgColor: clipData.bgColor || 'transparent',
       textAlign: clipData.textAlign || 'center',

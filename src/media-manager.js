@@ -66,6 +66,8 @@ export class MediaManager {
       height: 120,
       fontSize: 64,
       fontFamily: 'Inter',
+      fontWeight: 'normal',
+      customFontUrl: null,
       color: '#ffffff',
       bgColor: 'transparent',
       textAlign: 'center'
