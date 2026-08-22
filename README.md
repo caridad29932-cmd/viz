@@ -87,7 +87,7 @@ npm run preview
 4. The included `.github/workflows/deploy.yml` builds and deploys `dist/` on every push to `main`
 5. The site will deploy to `https://zrnge.com/viz/`
 
-> **Note:** `vite.config.js` defaults to `base: '/Viz/'`. If your repo name is different, set the `BASE_PATH` environment variable in the workflow or change the default in `vite.config.js`. Use `BASE_PATH=/` for a custom domain.
+> **Note:** `vite.config.js` defaults to `base: '/viz/'` to match the lowercase repository name. If your repo name is different, set the `BASE_PATH` environment variable in the workflow or change the default in `vite.config.js`. Use `BASE_PATH=/` for a custom domain root.
 
 ### Option 2: Manual gh-pages Branch
 
