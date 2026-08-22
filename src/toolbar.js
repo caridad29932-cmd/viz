@@ -62,26 +62,31 @@ export class Toolbar {
         return;
       }
 
-      switch (e.code) {
-        case 'Space':
-          e.preventDefault();
-          this.callbacks.onTogglePlay?.();
-          break;
-        case 'KeyS':
-          e.preventDefault();
-          this.callbacks.onSplit?.();
-          break;
-        case 'Delete':
-        case 'Backspace':
-          e.preventDefault();
-          this.callbacks.onDelete?.();
-          break;
+      // Space: play/pause (does not conflict with typing)
+      if (e.code === 'Space') {
+        e.preventDefault();
+        this.callbacks.onTogglePlay?.();
+        return;
       }
 
-      // Export now requires Ctrl+E so typing 'e' in inputs doesn't trigger it
-      if ((e.ctrlKey || e.metaKey) && e.code === 'KeyE') {
+      // All editing shortcuts require Ctrl/Cmd so they never fire while typing
+      if (e.ctrlKey || e.metaKey) {
+        switch (e.code) {
+          case 'KeyS':
+            e.preventDefault();
+            this.callbacks.onSplit?.();
+            return;
+          case 'KeyE':
+            e.preventDefault();
+            this.callbacks.onExport?.();
+            return;
+        }
+      }
+
+      // Delete/Backspace still work without Ctrl (they don't conflict with letters)
+      if (e.code === 'Delete' || e.code === 'Backspace') {
         e.preventDefault();
-        this.callbacks.onExport?.();
+        this.callbacks.onDelete?.();
       }
     });
   }

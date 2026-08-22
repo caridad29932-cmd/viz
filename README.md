@@ -23,7 +23,7 @@ Built with **Vanilla JS**, **Vite**, and **[ffmpeg.wasm](https://ffmpegwasm.netl
 - **Audio mixing** — Video audio + audio clips are mixed and exported
 - **Export** — Download the edited video (MP4 via ffmpeg.wasm, WebM fallback)
 - **Project save/load** — Export/import project JSON (timeline + edits; media files must be re-linked)
-- **Keyboard shortcuts** — Space, I, O, T, S, Del, E, Arrow keys, Ctrl+Z/Y
+- **Keyboard shortcuts** — Space, Ctrl+S, Del, Arrow keys, Ctrl+E/Z/Y/C/V/D
 
 ## How It Works
 
@@ -139,10 +139,7 @@ Then go to **Settings → Pages** and set the source to `gh-pages` branch.
 | Key | Action |
 |-----|--------|
 | `Space` | Play / Pause |
-| `I` | Set In point |
-| `O` | Set Out point |
-| `T` | Trim to in/out range |
-| `S` | Split at playhead |
+| `Ctrl+S` | Split at playhead |
 | `Del` / `Backspace` | Delete element |
 | `Ctrl+E` | Export |
 | `Ctrl+C` / `Ctrl+V` | Copy / Paste |
