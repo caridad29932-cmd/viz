@@ -82,10 +82,12 @@ npm run preview
 ### Option 1: GitHub Actions (Recommended)
 
 1. Push your code to the `main` branch
-2. Go to **Settings → Pages** in your GitHub repo
-3. Under **Source**, select **GitHub Actions**
+2. Go to **Settings → Pages** in your GitHub repo (`https://github.com/zrnge/viz/settings/pages`)
+3. Under **Source**, select **GitHub Actions** — **NOT** "Deploy from a branch"
 4. The included `.github/workflows/deploy.yml` builds and deploys `dist/` on every push to `main`
 5. The site will deploy to `https://zrnge.com/viz/`
+
+> **Important:** If you previously used "Deploy from a branch", GitHub Pages may keep serving the raw source files. After switching to GitHub Actions, go to **Actions** and re-run the latest workflow, then wait 1–2 minutes for the deployment to update.
 
 > **Note:** `vite.config.js` defaults to `base: '/viz/'` for deployments under the `/viz/` subpath (e.g., `zrnge.com/viz/`). If you deploy to a custom-domain root (e.g., `zrnge.com/`), set the `BASE_PATH` environment variable to `/` in the workflow or change the default in `vite.config.js`.
 
@@ -153,6 +155,23 @@ Made with ❤️ by **[Zrnge](https://zrnge.com/viz)**.
 
 - Website: [zrnge.com/viz](https://zrnge.com/viz)
 - Source: [github.com/zrnge/viz](https://github.com/zrnge/viz)
+
+## Troubleshooting
+
+### Site loads unstyled or shows 404 for `/src/main.js` and `coi-serviceworker.js`
+
+This means GitHub Pages is serving the raw source files instead of the built `dist/` output.
+
+**Fix:**
+1. Go to `https://github.com/zrnge/viz/settings/pages`
+2. Set **Source** to **GitHub Actions**
+3. Save, then go to `https://github.com/zrnge/viz/actions`
+4. Re-run the latest workflow
+5. Wait 1–2 minutes and hard-refresh `https://zrnge.com/viz/`
+
+### Workflow fails with "Failed to create deployment (status: 404)"
+
+GitHub Pages is not enabled. Follow the steps above and set the source to **GitHub Actions** first.
 
 ## License
 

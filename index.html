@@ -14,7 +14,7 @@
       window.VIZ_BASE_PATH = path.endsWith('/viz/') ? '/viz/' : '/';
     })();
   </script>
-  <script src="./coi-serviceworker.js"></script>
+  <script src="./coi-serviceworker.js" id="coi-script"></script>
 
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -202,22 +202,23 @@
   <!-- Toast Container -->
   <div id="toast-container" class="toast-container"></div>
 
-  <script type="module" src="./src/main.js"></script>
+  <script type="module" src="./src/main.js" id="main-script"></script>
   <script>
-    // Fallback diagnostic: if this page is served without being built by Vite,
-    // the module above may 404 or load unbundled. Print a clear message so
-    // developers know GitHub Pages is serving the source tree, not dist/.
-    window.addEventListener('error', function(e) {
-      const msg = e.message || '';
-      if (msg.includes('main.js') || msg.includes('style.css') || location.pathname.endsWith('/src/main.js')) {
-        console.error(
-          '%c[Viz Deploy Error]',
-          'color:#f87171;font-weight:bold;',
-          'GitHub Pages is serving the source files instead of the built dist/. ' +
-          'Go to https://github.com/zrnge/viz/settings/pages and set Source to "GitHub Actions".'
-        );
+    // Fallback for when GitHub Pages serves the raw source index.html instead of
+    // the built dist/index.html. Vite normally rewrites these paths during build.
+    // If the relative module fails, reload with absolute /viz/ paths.
+    (function() {
+      const base = '/viz/';
+      const mainScript = document.getElementById('main-script');
+      const coiScript = document.getElementById('coi-script');
+      if (location.pathname.startsWith(base) && mainScript) {
+        mainScript.addEventListener('error', function() {
+          console.warn('[Viz] Source index.html served under /viz/; retrying with absolute paths.');
+          mainScript.src = base + 'src/main.js';
+          if (coiScript) coiScript.src = base + 'coi-serviceworker.js';
+        });
       }
-    }, true);
+    })();
   </script>
 </body>
 </html>
