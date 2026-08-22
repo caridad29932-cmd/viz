@@ -150,8 +150,20 @@ function onMediaUrlRegistered(clipId, objectUrl) {
 }
 
 function onCompositionChanged() {
-  canvasPreview.resize();
-  canvasPreview.render();
+  // Avoid resizing the canvas on every minor update; only resize when the
+  // composition dimensions actually change. _setupCanvas() is expensive.
+  if (
+    canvasPreview.canvas.width === 0 ||
+    canvasPreview.canvas.height === 0 ||
+    canvasPreview.lastCompWidth !== composition.width ||
+    canvasPreview.lastCompHeight !== composition.height
+  ) {
+    canvasPreview.resize();
+    canvasPreview.lastCompWidth = composition.width;
+    canvasPreview.lastCompHeight = composition.height;
+  }
+
+  canvasPreview.markNeedsRender();
   multiTimeline.render();
   propertiesPanel.render();
   updatePreviewResolutionBadge();
@@ -205,6 +217,18 @@ function seekTo(targetTime, playing = false) {
   syncActiveMedia(targetTime, playing);
 }
 
+function resizePreviewOnce() {
+  if (!canvasPreview) return;
+  if (
+    canvasPreview.lastCompWidth !== composition.width ||
+    canvasPreview.lastCompHeight !== composition.height
+  ) {
+    canvasPreview.resize();
+    canvasPreview.lastCompWidth = composition.width;
+    canvasPreview.lastCompHeight = composition.height;
+  }
+}
+
 function updateTimeDisplay() {
   const current = canvasPreview.currentTime;
   const total = composition.duration;
@@ -228,13 +252,15 @@ function syncActiveMedia(time, playing) {
     const offset = time - clip.startTime + trimStart;
 
     if (clip.type === 'video' || clip.type === 'audio') {
-      const threshold = playing ? 0.25 : 0.05;
+      const track = composition.getTrack(clip.trackId);
+      const isMuted = track ? track.muted : false;
+
+      // Only seek when the playhead jumps (scrubbing, seeking, or clip boundary).
+      // During normal playback the HTMLMediaElement advances on its own clock.
+      const threshold = playing ? 0.5 : 0.05;
       if (Math.abs(clip.element.currentTime - offset) > threshold) {
         clip.element.currentTime = clamp(offset, 0, clip.element.duration || Infinity);
       }
-
-      const track = composition.getTrack(clip.trackId);
-      const isMuted = track ? track.muted : false;
 
       if (playing && clip.element.paused) {
         clip.element.volume = clip.volume ?? 1;
@@ -292,7 +318,12 @@ function play() {
       pause();
     }
 
-    seekTo(nextTime, true);
+    // Avoid the full seekTo() path during playback; it re-syncs every media
+    // element and can be expensive. Just advance time and render once.
+    canvasPreview.setCurrentTime(nextTime);
+    multiTimeline.setCurrentTime(nextTime);
+    updateTimeDisplay();
+    syncActiveMedia(nextTime, true);
 
     playAnimFrameId = requestAnimationFrame(loop);
   };
@@ -375,7 +406,6 @@ function bindControls() {
       if (preset === 'custom') return;
       const dims = getPresetDimensions(preset, composition.width, composition.height);
       composition.setDimensions(dims.width, dims.height);
-      canvasPreview.resize();
       onCompositionChanged();
     });
   }

@@ -81,6 +81,15 @@ export class CanvasPreview {
     this.isPlaying = playing;
   }
 
+  markNeedsRender() {
+    if (this._renderPending) return;
+    this._renderPending = true;
+    requestAnimationFrame(() => {
+      this._renderPending = false;
+      this.render();
+    });
+  }
+
   /**
    * Offline clean render (for high quality export without selection outlines/handles)
    */
@@ -176,15 +185,8 @@ export class CanvasPreview {
     if (!clip.element) return;
     const video = clip.element;
 
-    const clipOffset = this.currentTime - clip.startTime + clip.trimStart;
-
-    // Keep the video element in sync with the composition playhead.
-    // A small threshold prevents redundant currentTime assignments while
-    // keeping frame-accurate boundaries when scrubbing or looping.
-    if (Math.abs(video.currentTime - clipOffset) > 0.05) {
-      video.currentTime = clipOffset;
-    }
-
+    // Do not seek the video element from the render loop; seeking is handled
+    // once per time change by syncActiveMedia(). Just draw the current frame.
     try {
       ctx.drawImage(video, clip.x, clip.y, clip.width, clip.height);
     } catch (e) {}
@@ -412,7 +414,7 @@ export class CanvasPreview {
     clip.width = Math.round(newW);
     clip.height = Math.round(newH);
 
-    this.render();
+    this.markNeedsRender();
 
     if (this.onChangeClipTransform) {
       this.onChangeClipTransform(clip);
