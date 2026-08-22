@@ -4,6 +4,8 @@ Viz: the first local video editor for free. No server, no backend, no data leave
 
 Developed by **[Zrnge](https://zrnge.com/viz)** — [github.com/zrnge/viz](https://github.com/zrnge/viz).
 
+[![Try it for free now](https://img.shields.io/badge/Try_it_for_free_now-8b5cf6?style=for-the-badge&logo=rocket&logoColor=white)](https://zrnge.com/viz/)
+
 Built with **Vanilla JS**, **Vite**, and **[ffmpeg.wasm](https://ffmpegwasm.netlify.app/)**.
 
 ![Dark themed editor](https://img.shields.io/badge/Theme-Dark-0e0e18?style=flat-square)
