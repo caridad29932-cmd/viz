@@ -4,6 +4,7 @@
  * with selectable/draggable elements and 8-point resize handles.
  */
 import { clamp } from './utils.js';
+import { applyClipTransformsAtTime } from './keyframes.js';
 
 export class CanvasPreview {
   constructor({ canvas, composition, onSelectClip, onChangeClipTransform, onContextMenu }) {
@@ -32,8 +33,6 @@ export class CanvasPreview {
     const parent = this.canvas.parentElement;
     const pRect = parent.getBoundingClientRect();
 
-    // Fit the canvas to the wrapper while preserving the composition aspect ratio.
-    // Use the full available space minus a small padding.
     const padding = 16;
     let availableW = Math.max(1, pRect.width - padding * 2);
     let availableH = Math.max(1, pRect.height - padding * 2);
@@ -47,7 +46,6 @@ export class CanvasPreview {
       w = h * compRatio;
     }
 
-    // Floor for crisp CSS size, but keep internal resolution exact.
     w = Math.max(1, Math.floor(w));
     h = Math.max(1, Math.floor(h));
 
@@ -55,10 +53,6 @@ export class CanvasPreview {
     this.displayHeight = h;
     this.scale = this.displayWidth / (this.comp.width || 1920);
 
-    // Keep the CSS box exactly at the calculated display size so the canvas is not
-    // stretched by responsive rules. Internal resolution matches the CSS box for a
-    // pixel-perfect preview; we scale the rendering context so composition units map
-    // to display pixels.
     this.canvas.style.width = `${w}px`;
     this.canvas.style.height = `${h}px`;
     this.canvas.width = w;
@@ -109,7 +103,7 @@ export class CanvasPreview {
 
     for (const clip of activeClips) {
       ctx.save();
-      ctx.globalAlpha = clip.opacity;
+      this._applyClipTransform(ctx, clip, time, false);
 
       if (clip.type === 'video') {
         this._renderVideoClipAtTime(ctx, clip, time);
@@ -121,6 +115,22 @@ export class CanvasPreview {
 
       ctx.restore();
     }
+  }
+
+  _applyClipTransform(ctx, clip, time, applyOpacity = true) {
+    const t = applyClipTransformsAtTime(clip, time);
+
+    if (applyOpacity) ctx.globalAlpha = t.opacity;
+
+    const cx = clip.x + clip.width / 2;
+    const cy = clip.y + clip.height / 2;
+
+    ctx.translate(cx, cy);
+    if (t.rotation) ctx.rotate((t.rotation * Math.PI) / 180);
+    if (t.scale !== 1) ctx.scale(t.scale, t.scale);
+    ctx.translate(-cx, -cy);
+
+    return t;
   }
 
   _renderVideoClipAtTime(ctx, clip, time) {
@@ -160,7 +170,7 @@ export class CanvasPreview {
 
     for (const clip of activeClips) {
       ctx.save();
-      ctx.globalAlpha = clip.opacity;
+      this._applyClipTransform(ctx, clip, this.currentTime, true);
 
       if (clip.type === 'video') {
         this._renderVideoClip(ctx, clip);
@@ -183,12 +193,8 @@ export class CanvasPreview {
 
   _renderVideoClip(ctx, clip) {
     if (!clip.element) return;
-    const video = clip.element;
-
-    // Do not seek the video element from the render loop; seeking is handled
-    // once per time change by syncActiveMedia(). Just draw the current frame.
     try {
-      ctx.drawImage(video, clip.x, clip.y, clip.width, clip.height);
+      ctx.drawImage(clip.element, clip.x, clip.y, clip.width, clip.height);
     } catch (e) {}
   }
 
@@ -296,6 +302,26 @@ export class CanvasPreview {
         this.onContextMenu(e.clientX, e.clientY, selectedClip ? selectedClip.id : null);
       }
     });
+
+    // Drag-and-drop media onto preview canvas
+    this.canvas.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      this.canvas.classList.add('drag-over');
+    });
+
+    this.canvas.addEventListener('dragleave', () => {
+      this.canvas.classList.remove('drag-over');
+    });
+
+    this.canvas.addEventListener('drop', (e) => {
+      e.preventDefault();
+      this.canvas.classList.remove('drag-over');
+      if (this._onDropFiles) this._onDropFiles(e.dataTransfer.files, e);
+    });
+  }
+
+  onDropFiles(callback) {
+    this._onDropFiles = callback;
   }
 
   _getCanvasPos(e) {
@@ -330,6 +356,7 @@ export class CanvasPreview {
             width: selectedClip.width,
             height: selectedClip.height
           };
+          this.comp.startBatch('transform clip');
           return;
         }
       }
@@ -363,6 +390,7 @@ export class CanvasPreview {
         width: hitClip.width,
         height: hitClip.height
       };
+      this.comp.startBatch('transform clip');
       this.render();
     } else {
       this.comp.selectedClipId = null;
@@ -425,7 +453,7 @@ export class CanvasPreview {
     if (this.isDragging) {
       this.isDragging = false;
       this.dragMode = null;
-      this.comp.saveSnapshot();
+      this.comp.commitBatch();
     }
   }
 }

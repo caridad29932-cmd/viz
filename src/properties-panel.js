@@ -2,7 +2,8 @@
  * Properties Panel Module
  * Displays and allows editing properties of the currently selected element.
  */
-import { formatTime, escapeHtml } from './utils.js';
+import { formatTime, escapeHtml, showToast } from './utils.js';
+import { setKeyframe } from './keyframes.js';
 
 const ASPECT_PRESETS = {
   '16:9': { ratio: 16 / 9, name: '16:9 Landscape', default: { width: 1920, height: 1080 } },
@@ -25,8 +26,6 @@ function getPresetDimensions(presetKey, currentWidth, currentHeight) {
   const cfg = ASPECT_PRESETS[presetKey];
   if (!cfg) return { width: currentWidth, height: currentHeight };
 
-  // Keep the current area roughly consistent when switching ratios so users
-  // don't get jarring jumps between tiny and huge resolutions.
   const currentArea = currentWidth * currentHeight;
   const targetRatio = cfg.ratio;
   const height = Math.round(Math.sqrt(currentArea / targetRatio));
@@ -36,14 +35,15 @@ function getPresetDimensions(presetKey, currentWidth, currentHeight) {
 
 
 export class PropertiesPanel {
-  constructor(container, composition, onChange, onMediaUrlRegistered) {
+  constructor(container, composition, onChange, onMediaUrlRegistered, store) {
     this.container = container;
     this.comp = composition;
     this.onChange = onChange;
     this.onMediaUrlRegistered = onMediaUrlRegistered;
+    this.store = store;
 
     this._lastSelectedClipId = null;
-    this._lastPanelMode = null; // 'clip' | 'canvas'
+    this._lastPanelMode = null;
 
     this.render();
   }
@@ -52,8 +52,6 @@ export class PropertiesPanel {
     const clip = this.comp.getSelectedClip();
     const mode = clip ? 'clip' : 'canvas';
 
-    // Preserve the panel DOM when the same clip is still selected so typing
-    // in an input is not interrupted by onCompositionChanged() re-renders.
     if (mode === 'clip' && this._lastPanelMode === 'clip' && this._lastSelectedClipId === clip.id) {
       this._updateClipValues(clip);
       return;
@@ -74,8 +72,6 @@ export class PropertiesPanel {
     const setVal = (id, val) => {
       const el = document.getElementById(id);
       if (!el) return;
-      // Don't overwrite the active input while the user is typing; only update
-      // when the value has actually changed from an external source.
       if (document.activeElement === el) return;
       if (el.value !== String(val)) el.value = val;
     };
@@ -122,6 +118,7 @@ export class PropertiesPanel {
     const isVisual = clip.type === 'video' || clip.type === 'image' || clip.type === 'text';
     const isText = clip.type === 'text';
     const hasAudio = clip.type === 'video' || clip.type === 'audio';
+    const hasKeyframes = clip.keyframes && Object.keys(clip.keyframes).length > 0;
 
     const safeType = escapeHtml(clip.type.toUpperCase());
     const safeText = escapeHtml(clip.text || '');
@@ -222,8 +219,34 @@ export class PropertiesPanel {
             <input type="range" min="0" max="2" step="0.05" id="prop-volume" value="${clip.volume ?? 1}">
             <span class="prop-val-display" id="prop-volume-val">${Math.round((clip.volume ?? 1) * 100)}%</span>
           </div>
+          <div class="prop-row">
+            <label>Fade In (s)</label>
+            <input type="number" min="0" step="0.1" id="prop-fade-in" value="${clip.fadeIn || 0}">
+          </div>
+          <div class="prop-row">
+            <label>Fade Out (s)</label>
+            <input type="number" min="0" step="0.1" id="prop-fade-out" value="${clip.fadeOut || 0}">
+          </div>
         </div>
         ` : ''}
+
+        <!-- Keyframes -->
+        <div class="prop-section">
+          <span class="prop-section-title">KEYFRAMES</span>
+          <div class="prop-row">
+            <button class="tool-btn" id="prop-kf-position" type="button">+ Position</button>
+            <button class="tool-btn" id="prop-kf-scale" type="button">+ Scale</button>
+          </div>
+          <div class="prop-row" style="margin-top: 4px;">
+            <button class="tool-btn" id="prop-kf-rotation" type="button">+ Rotation</button>
+            <button class="tool-btn" id="prop-kf-opacity" type="button">+ Opacity</button>
+          </div>
+          ${hasKeyframes ? `
+          <div class="prop-row" style="margin-top: 6px;">
+            <span class="prop-val-display">${Object.keys(clip.keyframes).length} animated properties</span>
+          </div>
+          ` : ''}
+        </div>
 
         <div class="prop-actions">
           <button class="tool-btn danger wide" id="prop-delete-btn" type="button">
@@ -405,6 +428,8 @@ export class PropertiesPanel {
     }
 
     const textColorEl = document.getElementById('prop-text-color');
+    const textBgEl = document.getElementById('prop-text-bg');
+    const textBgTransparentEl = document.getElementById('prop-text-bg-transparent');
     if (textColorEl) {
       textColorEl.addEventListener('input', () => {
         clip.color = textColorEl.value;
@@ -412,9 +437,6 @@ export class PropertiesPanel {
       });
       textColorEl.addEventListener('change', () => this.comp.saveSnapshot());
     }
-
-    const textBgEl = document.getElementById('prop-text-bg');
-    const textBgTransparentEl = document.getElementById('prop-text-bg-transparent');
     if (textBgEl && textBgTransparentEl) {
       const applyBg = () => {
         clip.bgColor = textBgTransparentEl.checked ? 'transparent' : textBgEl.value;
@@ -434,6 +456,42 @@ export class PropertiesPanel {
       });
       volEl.addEventListener('change', () => this.comp.saveSnapshot());
     }
+
+    const fadeInEl = document.getElementById('prop-fade-in');
+    const fadeOutEl = document.getElementById('prop-fade-out');
+    if (fadeInEl) {
+      fadeInEl.addEventListener('change', () => {
+        clip.fadeIn = parseFloat(fadeInEl.value) || 0;
+        this.comp.saveSnapshot();
+        if (this.onChange) this.onChange();
+      });
+    }
+    if (fadeOutEl) {
+      fadeOutEl.addEventListener('change', () => {
+        clip.fadeOut = parseFloat(fadeOutEl.value) || 0;
+        this.comp.saveSnapshot();
+        if (this.onChange) this.onChange();
+      });
+    }
+
+    // Keyframe buttons
+    const bindKeyframe = (id, property, valueFn) => {
+      const btn = document.getElementById(id);
+      if (!btn) return;
+      btn.addEventListener('click', () => {
+        const currentTime = this.store ? this.store.get('currentTime') || 0 : 0;
+        const value = valueFn();
+        clip.keyframes = setKeyframe(clip.keyframes, property, currentTime, value, 'linear');
+        this.comp.saveSnapshot();
+        if (this.onChange) this.onChange();
+        showToast(`Keyframe added: ${property}`, 'success');
+      });
+    };
+
+    bindKeyframe('prop-kf-position', 'x', () => clip.x);
+    bindKeyframe('prop-kf-scale', 'scale', () => 1);
+    bindKeyframe('prop-kf-rotation', 'rotation', () => 0);
+    bindKeyframe('prop-kf-opacity', 'opacity', () => clip.opacity ?? 1);
 
     const delBtn = document.getElementById('prop-delete-btn');
     if (delBtn) {

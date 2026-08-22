@@ -3,12 +3,14 @@
  * Handles loading & adding Video, Image, Text, and Audio elements into the multi-track composition.
  */
 import { validateFile, showToast } from './utils.js';
+import { generateProxy } from './proxy.js';
 
 export class MediaManager {
-  constructor(composition, onCompositionChanged, onMediaUrlRegistered) {
+  constructor(composition, onCompositionChanged, onMediaUrlRegistered, store) {
     this.comp = composition;
     this.onCompositionChanged = onCompositionChanged;
     this.onMediaUrlRegistered = onMediaUrlRegistered;
+    this.store = store;
 
     this._bindFileInputs();
   }
@@ -74,18 +76,42 @@ export class MediaManager {
     return clip;
   }
 
-  async _onVideoSelected(e) {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
+  async importFile(file, { startTime = 0, trackIndex = null } = {}) {
+    const type = this._detectType(file);
+    if (!type) {
+      showToast(`Unsupported file type: ${file.name}`, 'error');
+      return;
+    }
 
-    const file = files[0];
+    if (type === 'video') return this._importVideo(file, { startTime, trackIndex });
+    if (type === 'image') return this._importImage(file, { startTime, trackIndex });
+    if (type === 'audio') return this._importAudio(file, { startTime, trackIndex });
+  }
+
+  _detectType(file) {
+    const valVideo = validateFile(file, 'video');
+    if (valVideo.valid) return 'video';
+    const valImage = validateFile(file, 'image');
+    if (valImage.valid) return 'image';
+    const valAudio = validateFile(file, 'audio');
+    if (valAudio.valid) return 'audio';
+    return null;
+  }
+
+  async _importVideo(file, { startTime, trackIndex }) {
     const val = validateFile(file, 'video');
     if (!val.valid) {
       showToast(val.error, 'error');
       return;
     }
 
-    const videoTrack = this.comp.tracks.find(t => t.type === 'video');
+    let videoTrack = this.comp.tracks.find(t => t.type === 'video');
+    if (trackIndex !== null) {
+      const requested = this.comp.tracks[trackIndex];
+      if (requested && (requested.type === 'video' || requested.type === 'image')) {
+        videoTrack = requested;
+      }
+    }
     if (!videoTrack) {
       showToast('No video track available', 'error');
       return;
@@ -98,6 +124,7 @@ export class MediaManager {
 
     await new Promise((resolve) => {
       video.onloadedmetadata = () => resolve();
+      video.onerror = () => resolve();
     });
 
     const dur = Math.round(video.duration || 10);
@@ -120,7 +147,7 @@ export class MediaManager {
       file: file,
       src: objectUrl,
       element: video,
-      startTime: 0,
+      startTime,
       duration: dur,
       x: posX,
       y: posY,
@@ -130,16 +157,30 @@ export class MediaManager {
     });
 
     if (this.onMediaUrlRegistered) this.onMediaUrlRegistered(clip.id, objectUrl);
+
+    // Generate proxy asynchronously for smooth editing
+    const proxyEnabled = this.store ? this.store.get('proxyEnabled') !== false : true;
+    if (proxyEnabled && file.size > 50 * 1024 * 1024) {
+      generateProxy(file, objectUrl, 540, (pct) => {
+        // Proxy progress could be shown in UI
+        console.log(`Proxy generation: ${pct}%`);
+      }).then((proxyUrl) => {
+        clip.proxySrc = proxyUrl;
+        clip.proxyState = 'ready';
+        if (this.onCompositionChanged) this.onCompositionChanged();
+      }).catch((e) => {
+        console.warn('Proxy failed:', e);
+        clip.proxyState = 'failed';
+      });
+    }
+
     showToast(`Added Video: ${file.name}`, 'success');
     this.videoInput.value = '';
     if (this.onCompositionChanged) this.onCompositionChanged();
+    return clip;
   }
 
-  async _onImageSelected(e) {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-
-    const file = files[0];
+  async _importImage(file, { startTime, trackIndex }) {
     const val = validateFile(file, 'image');
     if (!val.valid) {
       showToast(val.error, 'error');
@@ -152,9 +193,17 @@ export class MediaManager {
 
     await new Promise((resolve) => {
       img.onload = () => resolve();
+      img.onerror = () => resolve();
     });
 
-    const imgTrack = this.comp.tracks.find(t => t.type === 'image') || this.comp.tracks.find(t => t.type === 'video');
+    let imgTrack = this.comp.tracks.find(t => t.type === 'image');
+    if (trackIndex !== null) {
+      const requested = this.comp.tracks[trackIndex];
+      if (requested && (requested.type === 'image' || requested.type === 'video')) {
+        imgTrack = requested;
+      }
+    }
+    if (!imgTrack) imgTrack = this.comp.tracks.find(t => t.type === 'video');
 
     const iW = img.naturalWidth || 800;
     const iH = img.naturalHeight || 600;
@@ -171,7 +220,7 @@ export class MediaManager {
       file: file,
       src: objectUrl,
       element: img,
-      startTime: 0,
+      startTime,
       duration: 5,
       x: posX,
       y: posY,
@@ -184,13 +233,10 @@ export class MediaManager {
     showToast(`Added Image: ${file.name}`, 'success');
     this.imageInput.value = '';
     if (this.onCompositionChanged) this.onCompositionChanged();
+    return clip;
   }
 
-  async _onAudioSelected(e) {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-
-    const file = files[0];
+  async _importAudio(file, { startTime, trackIndex }) {
     const val = validateFile(file, 'audio');
     if (!val.valid) {
       showToast(val.error, 'error');
@@ -202,11 +248,18 @@ export class MediaManager {
 
     await new Promise((resolve) => {
       audio.onloadedmetadata = () => resolve();
+      audio.onerror = () => resolve();
     });
 
     const dur = Math.round(audio.duration || 10);
 
     let audioTrack = this.comp.tracks.find(t => t.type === 'audio');
+    if (trackIndex !== null) {
+      const requested = this.comp.tracks[trackIndex];
+      if (requested && requested.type === 'audio') {
+        audioTrack = requested;
+      }
+    }
     if (!audioTrack) {
       audioTrack = this.comp.addAudioTrack();
     }
@@ -218,7 +271,7 @@ export class MediaManager {
       file: file,
       src: objectUrl,
       element: audio,
-      startTime: 0,
+      startTime,
       duration: dur,
       volume: 1
     });
@@ -227,5 +280,30 @@ export class MediaManager {
     showToast(`Added Audio: ${file.name}`, 'success');
     this.audioInput.value = '';
     if (this.onCompositionChanged) this.onCompositionChanged();
+    return clip;
+  }
+
+  async _onVideoSelected(e) {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    for (const file of files) {
+      await this._importVideo(file, { startTime: 0 });
+    }
+  }
+
+  async _onImageSelected(e) {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    for (const file of files) {
+      await this._importImage(file, { startTime: 0 });
+    }
+  }
+
+  async _onAudioSelected(e) {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    for (const file of files) {
+      await this._importAudio(file, { startTime: 0 });
+    }
   }
 }

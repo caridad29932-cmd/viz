@@ -11,6 +11,7 @@ import { PropertiesPanel } from './properties-panel.js';
 import { ClipboardManager } from './clipboard.js';
 import { ContextMenu } from './context-menu.js';
 import { Toolbar } from './toolbar.js';
+import { createDefaultStore } from './state.js';
 import { loadFFmpeg, exportComposition, downloadBlob } from './ffmpeg-worker.js';
 import { formatTime, showToast } from './utils.js';
 
@@ -23,10 +24,15 @@ let propertiesPanel = null;
 let clipboardManager = null;
 let contextMenu = null;
 let toolbar = null;
+let store = null;
 
 let isPlaying = false;
 let playAnimFrameId = null;
 let lastPlayTimestamp = 0;
+let playbackRate = 1;
+
+let inPoint = 0;
+let outPoint = 0;
 
 // --- DOM References ---
 const previewCanvasEl = document.getElementById('preview-canvas');
@@ -62,6 +68,11 @@ const progressTitle = document.getElementById('progress-title');
 const progressSubtitle = document.getElementById('progress-subtitle');
 const progressCancelBtn = document.getElementById('progress-cancel-btn');
 
+const exportWidthEl = document.getElementById('export-width');
+const exportHeightEl = document.getElementById('export-height');
+const exportFpsEl = document.getElementById('export-fps');
+const exportQualityEl = document.getElementById('export-quality');
+
 let exportAbortController = null;
 let isExporting = false;
 
@@ -69,10 +80,11 @@ const mediaUrlRegistry = new Map(); // clipId -> objectUrl for cleanup
 
 // --- Initialization ---
 function initApp() {
+  store = createDefaultStore();
   composition = new Composition(1920, 1080);
 
   // 1. Media Manager
-  mediaManager = new MediaManager(composition, () => onCompositionChanged(), onMediaUrlRegistered);
+  mediaManager = new MediaManager(composition, () => onCompositionChanged(), onMediaUrlRegistered, store);
 
   // 2. Clipboard Manager
   clipboardManager = new ClipboardManager(
@@ -108,6 +120,7 @@ function initApp() {
   multiTimeline = new MultiTimeline({
     container: timelineContainerEl,
     composition: composition,
+    store: store,
     onSeek: (targetTime) => {
       seekTo(targetTime);
     },
@@ -126,12 +139,17 @@ function initApp() {
     propertiesContainerEl,
     composition,
     () => onCompositionChanged(),
-    onMediaUrlRegistered
+    onMediaUrlRegistered,
+    store
   );
 
   // 7. Toolbar
   toolbar = new Toolbar({
     onTogglePlay: togglePlay,
+    onPause: pause,
+    onStop: stop,
+    onReversePlayback: () => setPlaybackRate(-1),
+    onForwardPlayback: () => setPlaybackRate(1),
     onUndo: () => { if (composition.undo()) onCompositionChanged(); },
     onRedo: () => { if (composition.redo()) onCompositionChanged(); },
     onSplit: () => {
@@ -139,10 +157,19 @@ function initApp() {
       if (clip && contextMenu) contextMenu.splitClipAtTime(clip, canvasPreview.currentTime);
     },
     onDelete: () => clipboardManager.deleteSelected(),
-    onExport: handleExport
+    onExport: handleExport,
+    onCopy: () => clipboardManager.copy(),
+    onPaste: () => clipboardManager.paste(),
+    onDuplicate: () => clipboardManager.duplicate(),
+    onSetInPoint: setInPoint,
+    onSetOutPoint: setOutPoint,
+    onSeek: (t) => seekTo(t),
+    onNudgeSeek: (delta) => seekTo((canvasPreview?.currentTime || 0) + delta),
+    getDuration: () => composition.duration
   });
 
   bindControls();
+  bindDropHandlers();
   loadFFmpegInBackground();
   onCompositionChanged();
   updateHeaderProjectName();
@@ -154,8 +181,6 @@ function onMediaUrlRegistered(clipId, objectUrl) {
 }
 
 function onCompositionChanged() {
-  // Avoid resizing the canvas on every minor update; only resize when the
-  // composition dimensions actually change. _setupCanvas() is expensive.
   if (
     canvasPreview.canvas.width === 0 ||
     canvasPreview.canvas.height === 0 ||
@@ -215,10 +240,11 @@ function getPresetDimensions(presetKey, currentWidth, currentHeight) {
 }
 
 function seekTo(targetTime, playing = false) {
-  canvasPreview.setCurrentTime(targetTime);
-  multiTimeline.setCurrentTime(targetTime);
+  const t = clamp(targetTime, 0, composition.duration);
+  canvasPreview.setCurrentTime(t);
+  multiTimeline.setCurrentTime(t);
   updateTimeDisplay();
-  syncActiveMedia(targetTime, playing);
+  syncActiveMedia(t, playing);
 }
 
 function resizePreviewOnce() {
@@ -261,8 +287,6 @@ function syncActiveMedia(time, playing) {
       const track = composition.getTrack(clip.trackId);
       const isMuted = track ? track.muted : false;
 
-      // Stop at the trimmed end so a 1-minute audio clip trimmed to 30s
-      // does not keep playing past its timeline boundary.
       const reachedTrimEnd = time >= clipEndTime - 1e-9 || offset >= trimEnd - 1e-9;
       if (reachedTrimEnd) {
         if (!clip.element.paused) clip.element.pause();
@@ -271,8 +295,6 @@ function syncActiveMedia(time, playing) {
         continue;
       }
 
-      // Only seek when the playhead jumps (scrubbing, seeking, or clip boundary).
-      // During normal playback the HTMLMediaElement advances on its own clock.
       const threshold = playing ? 0.5 : 0.05;
       if (Math.abs(clip.element.currentTime - offset) > threshold) {
         clip.element.currentTime = clamp(offset, 0, trimEnd);
@@ -281,6 +303,7 @@ function syncActiveMedia(time, playing) {
       if (playing && clip.element.paused) {
         clip.element.volume = clip.volume ?? 1;
         clip.element.muted = isMuted;
+        clip.element.playbackRate = Math.abs(playbackRate);
         clip.element.play().catch(() => {});
       } else if (!playing && !clip.element.paused) {
         clip.element.pause();
@@ -290,7 +313,6 @@ function syncActiveMedia(time, playing) {
     }
   }
 
-  // Pause clips that are no longer active
   for (const clip of composition.clips) {
     if (!clip.element || (clip.type !== 'video' && clip.type !== 'audio')) continue;
     const active = time >= clip.startTime - 1e-9 && time <= clip.startTime + clip.duration + 1e-9;
@@ -304,6 +326,13 @@ function togglePlay() {
   if (isPlaying) {
     pause();
   } else {
+    play();
+  }
+}
+
+function setPlaybackRate(rate) {
+  playbackRate = rate;
+  if (!isPlaying) {
     play();
   }
 }
@@ -324,18 +353,26 @@ function play() {
 
   const loop = (now) => {
     if (!isPlaying) return;
-    const dt = (now - lastPlayTimestamp) / 1000;
+    const dt = ((now - lastPlayTimestamp) / 1000) * playbackRate;
     lastPlayTimestamp = now;
 
     let nextTime = canvasPreview.currentTime + dt;
     const totalDur = composition.duration;
+
+    // Loop between in/out points if they are set
+    if (outPoint > inPoint) {
+      if (nextTime > outPoint) nextTime = inPoint;
+      if (nextTime < inPoint && dt < 0) nextTime = outPoint;
+    }
+
     if (nextTime >= totalDur) {
       nextTime = totalDur;
       pause();
+    } else if (nextTime < 0) {
+      nextTime = 0;
+      pause();
     }
 
-    // Avoid the full seekTo() path during playback; it re-syncs every media
-    // element and can be expensive. Just advance time and render once.
     canvasPreview.setCurrentTime(nextTime);
     multiTimeline.setCurrentTime(nextTime);
     updateTimeDisplay();
@@ -350,6 +387,7 @@ function play() {
 function pause() {
   if (!isPlaying) return;
   isPlaying = false;
+  playbackRate = 1;
   if (canvasPreview) canvasPreview.setIsPlaying(false);
   if (playAnimFrameId) cancelAnimationFrame(playAnimFrameId);
 
@@ -364,7 +402,17 @@ function pause() {
 
 function stop() {
   pause();
-  seekTo(0);
+  seekTo(inPoint || 0);
+}
+
+function setInPoint() {
+  inPoint = canvasPreview.currentTime;
+  showToast(`In point set: ${formatTime(inPoint)}`, 'info');
+}
+
+function setOutPoint() {
+  outPoint = canvasPreview.currentTime;
+  showToast(`Out point set: ${formatTime(outPoint)}`, 'info');
 }
 
 // --- Event Controls Binding ---
@@ -468,6 +516,28 @@ function initSidebarResizer() {
   resizer.addEventListener('pointercancel', endResize);
 }
 
+function bindDropHandlers() {
+  const handleFiles = async (files, e) => {
+    if (!files || files.length === 0) return;
+
+    const rect = timelineContainerEl.getBoundingClientRect();
+    const dropX = e.clientX - rect.left + timelineContainerEl.scrollLeft;
+    const pps = multiTimeline.pxPerSec * multiTimeline.zoomLevel;
+    const dropTime = Math.max(0, dropX / pps);
+    const dropY = e.clientY - rect.top + timelineContainerEl.scrollTop;
+    const trackIndex = Math.floor(dropY / 34);
+
+    for (const file of files) {
+      await mediaManager.importFile(file, { startTime: dropTime, trackIndex });
+    }
+
+    onCompositionChanged();
+  };
+
+  multiTimeline.onDropFiles(handleFiles);
+  canvasPreview.onDropFiles(handleFiles);
+}
+
 // --- Export Handling ---
 async function handleExport() {
   if (composition.clips.length === 0) {
@@ -501,10 +571,16 @@ async function handleExport() {
   }
 
   try {
-    const { blob, ext } = await exportComposition(composition, canvasPreview, (progressPct) => {
+    const width = parseInt(exportWidthEl?.value, 10) || composition.width;
+    const height = parseInt(exportHeightEl?.value, 10) || composition.height;
+    const fps = parseInt(exportFpsEl?.value, 10) || 30;
+    const quality = exportQualityEl?.value || 'high';
+
+    const { blob, ext } = await exportComposition(composition, canvasPreview, (progressPct, stage) => {
       if (signal.aborted) return;
+      if (stage) progressSubtitle.textContent = stage;
       updateProgress(progressPct);
-    }, signal);
+    }, signal, { width, height, fps, quality });
 
     if (signal.aborted) {
       hideProgress();
@@ -577,6 +653,8 @@ window.newProject = function newProject() {
   }
   mediaUrlRegistry.clear();
   composition.clear();
+  inPoint = 0;
+  outPoint = 0;
   onCompositionChanged();
   updateHeaderProjectName('Multi-Track Project');
   showToast('New project created', 'info');

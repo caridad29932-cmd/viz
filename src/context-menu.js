@@ -136,7 +136,7 @@ export class ContextMenu {
       return;
     }
 
-    if (splitTime <= clip.startTime + 0.1 || splitTime >= clip.startTime + clip.duration - 0.1) {
+    if (splitTime <= clip.startTime + 0.05 || splitTime >= clip.startTime + clip.duration - 0.05) {
       showToast('Position cursor inside clip to split', 'warning');
       return;
     }
@@ -144,11 +144,15 @@ export class ContextMenu {
     const firstDur = splitTime - clip.startTime;
     const secondDur = clip.duration - firstDur;
 
+    const baseTrimStart = clip.trimStart || 0;
+    const baseTrimEnd = clip.trimEnd || (baseTrimStart + clip.duration);
+
     const clip1Data = {
       ...clip,
       id: uid(),
       duration: Math.round(firstDur * 100) / 100,
-      trimEnd: Math.round((clip.trimStart || 0) + firstDur) * 100 / 100,
+      trimStart: baseTrimStart,
+      trimEnd: Math.round((baseTrimStart + firstDur) * 100) / 100,
       element: this._createMediaElement(clip),
     };
 
@@ -157,16 +161,17 @@ export class ContextMenu {
       id: uid(),
       startTime: Math.round(splitTime * 100) / 100,
       duration: Math.round(secondDur * 100) / 100,
-      trimStart: Math.round(((clip.trimStart || 0) + firstDur) * 100) / 100,
-      trimEnd: clip.trimEnd ?? (clip.trimStart || 0) + clip.duration,
+      trimStart: Math.round((baseTrimStart + firstDur) * 100) / 100,
+      trimEnd: baseTrimEnd,
       element: this._createMediaElement(clip),
     };
 
-    this.comp.removeClip(clip.id);
-    const c1 = this.comp.addClip(clip1Data);
-    const c2 = this.comp.addClip(clip2Data);
+    this.comp.startBatch('split clip');
+    this.comp.removeClip(clip.id, { skipHistory: true });
+    const c1 = this.comp.addClip(clip1Data, { skipHistory: true });
+    const c2 = this.comp.addClip(clip2Data, { skipHistory: true });
+    this.comp.commitBatch();
 
-    // Propagate object URL registration to the new clips so cleanup works
     if (clip.src) {
       this.onMediaUrlRegistered?.(c1.id, clip.src);
       this.onMediaUrlRegistered?.(c2.id, clip.src);
@@ -223,11 +228,12 @@ export class ContextMenu {
       volume: 1
     };
 
-    const newAudioClip = this.comp.addClip(audioClipData);
-    if (clip.src) this.onMediaUrlRegistered?.(newAudioClip.id, clip.src);
+    this.comp.startBatch('extract audio');
+    const newAudioClip = this.comp.addClip(audioClipData, { skipHistory: true });
+    this.comp.updateClip(clip.id, { volume: 0 }, { skipHistory: true });
+    this.comp.commitBatch();
 
-    // Mute the original video so its embedded audio doesn't double with the extracted track
-    this.comp.updateClip(clip.id, { volume: 0 });
+    if (clip.src) this.onMediaUrlRegistered?.(newAudioClip.id, clip.src);
 
     showToast(`Extracted audio to ${audioTrack.name}`, 'success');
 

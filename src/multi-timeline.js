@@ -3,31 +3,38 @@
  * Visualizes multi-track arrangement and supports drag-to-move, edge-trimming,
  * track-to-track moves, vertical scrolling, and playhead scrubbing.
  */
-import { formatTime, clamp, escapeHtml } from './utils.js';
+import { formatTime, clamp, escapeHtml, throttle } from './utils.js';
+import { findSnapOffset, quantizeTime } from './snapping.js';
 
 const TRACK_ROW_HEIGHT = 34;
+const MIN_CLIP_WIDTH_PX = 10;
 
 export class MultiTimeline {
-  constructor({ container, composition, onSeek, onSelectClip, onChangeClipTime, onContextMenu }) {
+  constructor({ container, composition, onSeek, onSelectClip, onChangeClipTime, onContextMenu, store }) {
     this.container = container;
     this.comp = composition;
     this.onSeek = onSeek;
     this.onSelectClip = onSelectClip;
     this.onChangeClipTime = onChangeClipTime;
     this.onContextMenu = onContextMenu;
+    this.store = store;
 
     this.zoomLevel = 1;
     this.pxPerSec = 40;
     this.currentTime = 0;
 
     this.isScrubbing = false;
-    this.isDraggingClip = false;
-    this.isResizingClip = false;
-
     this.dragTarget = null;
+
+    // Virtualization viewport
+    this.viewportStart = 0;
+    this.viewportEnd = 0;
 
     this._renderSkeleton();
     this._bindEvents();
+
+    // Throttle expensive renders during playback/drag
+    this._throttledRender = throttle(() => this.render(), 32);
   }
 
   _renderSkeleton() {
@@ -78,10 +85,19 @@ export class MultiTimeline {
   }
 
   render() {
+    this._updateViewport();
     this._renderRuler();
     this._renderSidebar();
     this._renderTracks();
     this.updatePlayheadPosition();
+  }
+
+  _updateViewport() {
+    const scrollLeft = this.tracksContainer.scrollLeft;
+    const width = this.tracksContainer.clientWidth;
+    const pps = this.pxPerSec * this.zoomLevel;
+    this.viewportStart = Math.max(0, scrollLeft / pps - 1);
+    this.viewportEnd = (scrollLeft + width) / pps + 1;
   }
 
   _renderRuler() {
@@ -119,6 +135,9 @@ export class MultiTimeline {
   }
 
   _renderSidebar() {
+    if (this._lastTrackCount === this.comp.tracks.length) return;
+    this._lastTrackCount = this.comp.tracks.length;
+
     this.sidebar.innerHTML = '';
     this.sidebar.style.height = `${this.comp.tracks.length * TRACK_ROW_HEIGHT}px`;
 
@@ -144,32 +163,61 @@ export class MultiTimeline {
   }
 
   _renderTracks() {
-    this.tracksContent.innerHTML = '';
-    this.tracksContent.style.height = `${this.comp.tracks.length * TRACK_ROW_HEIGHT}px`;
-
-    for (let i = 0; i < this.comp.tracks.length; i++) {
-      const track = this.comp.tracks[i];
-      const row = document.createElement('div');
-      row.className = 'mt-track-row';
-      row.dataset.trackId = track.id;
-      row.style.top = `${i * TRACK_ROW_HEIGHT}px`;
-      row.style.height = `${TRACK_ROW_HEIGHT}px`;
-      this.tracksContent.appendChild(row);
+    // Reuse track rows where possible
+    let rowsChanged = false;
+    if (this.tracksContent.childElementCount !== this.comp.tracks.length + 1) {
+      rowsChanged = true;
     }
 
-    for (const clip of this.comp.clips) {
-      const trackIndex = this.comp.tracks.findIndex(t => t.id === clip.trackId);
-      if (trackIndex === -1) continue;
+    if (rowsChanged) {
+      this.tracksContent.innerHTML = '';
+      this.tracksContent.style.height = `${this.comp.tracks.length * TRACK_ROW_HEIGHT}px`;
 
-      const clipEl = this._createClipElement(clip);
-      clipEl.style.left = `${clip.startTime * (this.pxPerSec * this.zoomLevel)}px`;
-      clipEl.style.width = `${Math.max(clip.duration * (this.pxPerSec * this.zoomLevel), 10)}px`;
-      clipEl.style.top = `${trackIndex * TRACK_ROW_HEIGHT + 3}px`;
-      clipEl.style.height = `${TRACK_ROW_HEIGHT - 6}px`;
-      if (clip.id === this.comp.selectedClipId) {
-        clipEl.classList.add('selected');
+      for (let i = 0; i < this.comp.tracks.length; i++) {
+        const track = this.comp.tracks[i];
+        const row = document.createElement('div');
+        row.className = 'mt-track-row';
+        row.dataset.trackId = track.id;
+        row.style.top = `${i * TRACK_ROW_HEIGHT}px`;
+        row.style.height = `${TRACK_ROW_HEIGHT}px`;
+        this.tracksContent.appendChild(row);
       }
-      this.tracksContent.appendChild(clipEl);
+    }
+
+    // Render only visible clips (virtualization)
+    const pps = this.pxPerSec * this.zoomLevel;
+
+    for (const clip of this.comp.clips) {
+      let el = document.querySelector(`.mt-clip[data-clip-id="${clip.id}"]`);
+      const trackIndex = this.comp.tracks.findIndex(t => t.id === clip.trackId);
+
+      const clipStart = clip.startTime;
+      const clipEnd = clip.startTime + clip.duration;
+      const isVisible = clipEnd >= this.viewportStart && clipStart <= this.viewportEnd;
+
+      if (!isVisible) {
+        if (el) el.remove();
+        continue;
+      }
+
+      const left = clip.startTime * pps;
+      const width = Math.max(clip.duration * pps, MIN_CLIP_WIDTH_PX);
+      const top = trackIndex * TRACK_ROW_HEIGHT + 3;
+
+      if (!el) {
+        el = this._createClipElement(clip);
+        this.tracksContent.appendChild(el);
+      }
+
+      el.style.transform = `translate3d(${left}px, ${top}px, 0)`;
+      el.style.width = `${width}px`;
+      el.classList.toggle('selected', clip.id === this.comp.selectedClipId);
+    }
+
+    // Remove stale clip elements
+    const validIds = new Set(this.comp.clips.map(c => c.id));
+    for (const el of this.tracksContent.querySelectorAll('.mt-clip')) {
+      if (!validIds.has(el.dataset.clipId)) el.remove();
     }
   }
 
@@ -252,11 +300,12 @@ export class MultiTimeline {
           initialTrackIndex: this.comp.tracks.findIndex(t => t.id === clip.trackId),
           initialStart: clip.startTime,
           initialDur: clip.duration,
-          initialTrimStart: clip.trimStart || 0
+          initialTrimStart: clip.trimStart || 0,
+          initialTrimEnd: clip.trimEnd || clip.duration
         };
         this.comp.selectedClipId = clipId;
         if (this.onSelectClip) this.onSelectClip(clipId);
-        this.render();
+        this.comp.startBatch(handleType === 'left' ? 'trim clip start' : 'trim clip end');
         e.stopPropagation();
       } else if (clipEl) {
         const clipId = clipEl.dataset.clipId;
@@ -275,7 +324,7 @@ export class MultiTimeline {
         };
         this.comp.selectedClipId = clipId;
         if (this.onSelectClip) this.onSelectClip(clipId);
-        this.render();
+        this.comp.startBatch('move clip');
         e.stopPropagation();
       }
     });
@@ -306,16 +355,41 @@ export class MultiTimeline {
       if (track) {
         if (action === 'toggle-visible') track.visible = !track.visible;
         if (action === 'toggle-mute') track.muted = !track.muted;
-        this.comp.saveSnapshot();
+        this.comp._pushSnapshot('toggle track');
         this.render();
       }
     });
+
+    this.tracksContainer.addEventListener('scroll', () => {
+      this._updateViewport();
+      this._throttledRender();
+    }, { passive: true });
+
+    // Drag-and-drop file import onto timeline
+    this.container.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      this.container.classList.add('drag-over');
+    });
+
+    this.container.addEventListener('dragleave', () => {
+      this.container.classList.remove('drag-over');
+    });
+
+    this.container.addEventListener('drop', (e) => {
+      e.preventDefault();
+      this.container.classList.remove('drag-over');
+      if (this._onDropFiles) this._onDropFiles(e.dataTransfer.files, e);
+    });
+  }
+
+  onDropFiles(callback) {
+    this._onDropFiles = callback;
   }
 
   _onDragClipMove(e) {
     if (!this.dragTarget) return;
 
-    const { clipId, mode, startX, startY, initialTrackIndex, initialStart, initialDur, initialTrimStart } = this.dragTarget;
+    const { clipId, mode, startX, startY, initialTrackIndex, initialStart, initialDur, initialTrimStart, initialTrimEnd } = this.dragTarget;
     const clip = this.comp.getClip(clipId);
     if (!clip) return;
 
@@ -333,9 +407,26 @@ export class MultiTimeline {
         }
       }
 
-      // Try to keep the requested start time; if it overlaps, snap to the nearest
-      // free gap on the target track so clips stay flush and draggable.
-      let candidateStart = Math.max(0, Math.round((initialStart + deltaTime) * 10) / 10);
+      let candidateStart = Math.max(0, initialStart + deltaTime);
+
+      // Snapping
+      const snapEnabled = this.store ? this.store.get('snapEnabled') !== false : true;
+      if (snapEnabled) {
+        const snap = findSnapOffset(
+          candidateStart,
+          clip.duration,
+          this.comp.clips,
+          clip.id,
+          this.currentTime,
+          pps,
+          { snapToPlayhead: true }
+        );
+        if (snap) candidateStart = snap.newStart;
+      }
+
+      candidateStart = quantizeTime(candidateStart);
+
+      // Prevent overlap by auto-shifting
       const sameTrackClips = this.comp.clips
         .filter(c => c.trackId === targetTrackId && c.id !== clip.id)
         .sort((a, b) => a.startTime - b.startTime);
@@ -350,22 +441,68 @@ export class MultiTimeline {
       clip.startTime = candidateStart;
       clip.trackId = targetTrackId;
     } else if (mode === 'trimRight') {
-      const newDuration = Math.max(0.5, Math.round((initialDur + deltaTime) * 10) / 10);
-      if (!this.comp.clipOverlaps(clip.id, clip.trackId, clip.startTime, newDuration)) {
+      let newDuration = Math.max(0.5, initialDur + deltaTime);
+
+      const snapEnabled = this.store ? this.store.get('snapEnabled') !== false : true;
+      if (snapEnabled) {
+        const snap = findSnapOffset(
+          initialStart,
+          newDuration,
+          this.comp.clips,
+          clip.id,
+          this.currentTime,
+          pps,
+          { snapToPlayhead: true }
+        );
+        if (snap && snap.edge === initialStart + newDuration) {
+          newDuration = Math.max(0.5, snap.newStart - initialStart);
+        }
+      }
+
+      newDuration = quantizeTime(newDuration);
+
+      const sourceMax = clip.element?.duration || Infinity;
+      const newTrimEnd = Math.min(initialTrimStart + newDuration, sourceMax);
+
+      if (!this.comp.clipOverlaps(clip.id, clip.trackId, initialStart, newDuration)) {
         clip.duration = newDuration;
-        clip.trimEnd = Math.round(((initialTrimStart || 0) + newDuration) * 10) / 10;
+        clip.trimEnd = newTrimEnd;
       }
     } else if (mode === 'trimLeft') {
-      const candidateStart = Math.max(0, initialStart + deltaTime);
-      const candidateDur = initialDur - (candidateStart - initialStart);
+      let candidateStart = Math.max(0, initialStart + deltaTime);
+      let candidateDur = initialDur - (candidateStart - initialStart);
+
       if (candidateDur >= 0.5) {
         const startDelta = candidateStart - initialStart;
-        const newStart = Math.round(candidateStart * 10) / 10;
-        const newDur = Math.round(candidateDur * 10) / 10;
-        if (!this.comp.clipOverlaps(clip.id, clip.trackId, newStart, newDur)) {
-          clip.startTime = newStart;
-          clip.duration = newDur;
-          clip.trimStart = Math.max(0, Math.round(((initialTrimStart || 0) + startDelta) * 10) / 10);
+        let newTrimStart = Math.max(0, initialTrimStart + startDelta);
+
+        const snapEnabled = this.store ? this.store.get('snapEnabled') !== false : true;
+        if (snapEnabled) {
+          const snap = findSnapOffset(
+            candidateStart,
+            candidateDur,
+            this.comp.clips,
+            clip.id,
+            this.currentTime,
+            pps,
+            { snapToPlayhead: true }
+          );
+          if (snap && snap.edge === candidateStart) {
+            const delta = snap.newStart - candidateStart;
+            candidateStart = snap.newStart;
+            candidateDur -= delta;
+            newTrimStart += delta;
+          }
+        }
+
+        candidateStart = quantizeTime(candidateStart);
+        candidateDur = quantizeTime(Math.max(0.5, candidateDur));
+        newTrimStart = Math.max(0, quantizeTime(newTrimStart));
+
+        if (!this.comp.clipOverlaps(clip.id, clip.trackId, candidateStart, candidateDur)) {
+          clip.startTime = candidateStart;
+          clip.duration = candidateDur;
+          clip.trimStart = newTrimStart;
         }
       }
     }
@@ -376,6 +513,10 @@ export class MultiTimeline {
 
   _onDragClipEnd() {
     this.dragTarget = null;
-    this.comp.saveSnapshot();
+    this.comp.commitBatch();
+  }
+
+  onDropFiles(callback) {
+    this.onDropFiles = callback;
   }
 }

@@ -12,7 +12,6 @@ let ffmpegLoaded = false;
 const CORE_FILES = ['ffmpeg-core.js', 'ffmpeg-core.wasm'];
 
 function resolveCoreUrl(filename) {
-  // Vite replaces import.meta.env.BASE_URL with the configured base path.
   const base = (typeof import.meta !== 'undefined' && import.meta.env?.BASE_URL) || '/';
   const normalized = base.endsWith('/') ? base : `${base}/`;
   return `${normalized}ffmpeg-core/${filename}`;
@@ -184,34 +183,20 @@ function audioBufferToWav(buffer) {
     }
   }
 
-  /* RIFF identifier */
   writeString(0, 'RIFF');
-  /* RIFF chunk length */
   view.setUint32(4, 36 + dataByteCount, true);
-  /* RIFF type */
   writeString(8, 'WAVE');
-  /* format chunk identifier */
   writeString(12, 'fmt ');
-  /* format chunk length */
   view.setUint32(16, 16, true);
-  /* sample format (raw PCM) */
   view.setUint16(20, format, true);
-  /* channel count */
   view.setUint16(22, numChannels, true);
-  /* sample rate */
   view.setUint32(24, sampleRate, true);
-  /* byte rate (sample rate * block align) */
   view.setUint32(28, sampleRate * blockAlign, true);
-  /* block align (channel count * bytes per sample) */
   view.setUint16(32, blockAlign, true);
-  /* bits per sample */
   view.setUint16(34, bitDepth, true);
-  /* data chunk identifier */
   writeString(36, 'data');
-  /* data chunk length */
   view.setUint32(40, dataByteCount, true);
 
-  // Write interleaved PCM 16-bit samples
   let offset = 44;
   const channels = [];
   for (let i = 0; i < numChannels; i++) {
@@ -257,7 +242,7 @@ function seekVideoToOffset(video, offset) {
 /**
  * High quality offline frame export with audio mixing and FFmpeg MP4 encoding.
  */
-export async function exportComposition(composition, canvasPreview, onProgress, abortSignal) {
+export async function exportComposition(composition, canvasPreview, onProgress, abortSignal, options = {}) {
   const duration = composition.duration;
   if (duration <= 0) {
     throw new Error('Composition is empty');
@@ -273,9 +258,14 @@ export async function exportComposition(composition, canvasPreview, onProgress, 
     }
   }
 
-  // 1. Ensure FFmpeg is loaded
+  const width = options.width || composition.width || 1920;
+  const height = options.height || composition.height || 1080;
+  const fps = options.fps || 30;
+  const quality = options.quality || 'high';
+
+  if (onProgress) onProgress(0, 'Loading FFmpeg');
+
   if (!ffmpegLoaded || !ffmpeg) {
-    if (onProgress) onProgress(2);
     await loadFFmpeg();
   }
 
@@ -285,13 +275,12 @@ export async function exportComposition(composition, canvasPreview, onProgress, 
   let offscreenCanvas = null;
 
   try {
-    if (onProgress) onProgress(5);
+    if (onProgress) onProgress(5, 'Rendering mixed audio');
 
-    // 2. Render mixed audio
     let audioBuffer = null;
     try {
       audioBuffer = await renderMixedAudio(composition, (pct) => {
-        if (onProgress) onProgress(5 + Math.round(pct * 0.15));
+        if (onProgress) onProgress(5 + Math.round(pct * 0.15), 'Rendering mixed audio');
       });
     } catch (audioErr) {
       console.warn('Audio mixing failed, continuing with video only:', audioErr);
@@ -300,20 +289,19 @@ export async function exportComposition(composition, canvasPreview, onProgress, 
     checkAborted();
     const hasAudio = Boolean(audioBuffer && audioBuffer.length > 0 && audioBuffer.duration > 0.05);
 
-    if (onProgress) onProgress(20);
+    if (onProgress) onProgress(20, 'Rendering video frames');
 
-    // 3. Setup offscreen canvas
     offscreenCanvas = document.createElement('canvas');
-    offscreenCanvas.width = composition.width || 1920;
-    offscreenCanvas.height = composition.height || 1080;
+    offscreenCanvas.width = width;
+    offscreenCanvas.height = height;
     const offCtx = offscreenCanvas.getContext('2d');
 
-    const fps = 30;
     const totalFrames = Math.ceil(duration * fps);
     const frameDuration = 1 / fps;
     const videoClips = composition.clips.filter(c => c.type === 'video' && c.element);
 
-    // 4. Render and write each frame to FFmpeg MEMFS
+    const jpegQuality = quality === 'low' ? 0.75 : quality === 'medium' ? 0.85 : 0.92;
+
     for (let f = 0; f < totalFrames; f++) {
       checkAborted();
       const time = f * frameDuration;
@@ -329,10 +317,10 @@ export async function exportComposition(composition, canvasPreview, onProgress, 
         await Promise.all(seekPromises);
       }
 
-      canvasPreview.renderOffline(offCtx, time, offscreenCanvas.width, offscreenCanvas.height);
+      canvasPreview.renderOffline(offCtx, time, width, height);
 
       const frameBlob = await new Promise((resolve) => {
-        offscreenCanvas.toBlob(resolve, 'image/jpeg', 0.92);
+        offscreenCanvas.toBlob(resolve, 'image/jpeg', jpegQuality);
       });
 
       if (!frameBlob) {
@@ -345,12 +333,11 @@ export async function exportComposition(composition, canvasPreview, onProgress, 
       inputFiles.push(frameName);
 
       const progressPct = 20 + Math.round((f / totalFrames) * 60);
-      if (onProgress) onProgress(progressPct);
+      if (onProgress) onProgress(progressPct, 'Rendering video frames');
     }
 
-    if (onProgress) onProgress(82);
+    if (onProgress) onProgress(82, 'Encoding video');
 
-    // 5. Write audio if present
     if (hasAudio) {
       const wavBlob = audioBufferToWav(audioBuffer);
       const wavData = await fetchFile(wavBlob);
@@ -358,7 +345,6 @@ export async function exportComposition(composition, canvasPreview, onProgress, 
       inputFiles.push('audio.wav');
     }
 
-    // 6. Encode H.264 + AAC MP4 with FFmpeg
     const logMessages = [];
     const logCb = ({ message }) => {
       logMessages.push(message);
@@ -367,7 +353,7 @@ export async function exportComposition(composition, canvasPreview, onProgress, 
     ffmpeg.on('log', logCb);
 
     const args = [
-      '-framerate', '30',
+      '-framerate', String(fps),
       '-start_number', '0',
       '-i', 'frame_%05d.jpg',
     ];
@@ -377,9 +363,9 @@ export async function exportComposition(composition, canvasPreview, onProgress, 
     }
 
     args.push(
-      '-vf', 'pad=ceil(iw/2)*2:ceil(ih/2)*2',
+      '-vf', `pad=ceil(iw/2)*2:ceil(ih/2)*2`,
       '-c:v', 'libx264',
-      '-preset', 'ultrafast',
+      '-preset', quality === 'low' ? 'superfast' : 'ultrafast',
       '-pix_fmt', 'yuv420p'
     );
 
@@ -400,7 +386,7 @@ export async function exportComposition(composition, canvasPreview, onProgress, 
       throw new Error(`FFmpeg encoding failed (exit code ${ret}):\n${errDetail}`);
     }
 
-    if (onProgress) onProgress(95);
+    if (onProgress) onProgress(95, 'Finalizing export');
 
     const mp4Data = await ffmpeg.readFile('export.mp4');
 
@@ -408,7 +394,7 @@ export async function exportComposition(composition, canvasPreview, onProgress, 
       throw new Error('FFmpeg failed to produce output MP4');
     }
 
-    if (onProgress) onProgress(100);
+    if (onProgress) onProgress(100, 'Export complete');
     return { blob: new Blob([mp4Data.buffer], { type: 'video/mp4' }), ext: 'mp4' };
   } finally {
     await cleanupFiles(inputFiles);

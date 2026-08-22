@@ -3,6 +3,7 @@
  * Handles multi-track timeline data, clip lifecycle, tracks, and history stack.
  */
 import { uid } from './utils.js';
+import { History } from './history.js';
 
 export class Composition {
   constructor(width = 1920, height = 1080) {
@@ -20,9 +21,13 @@ export class Composition {
 
     this.clips = [];
     this.selectedClipId = null;
-    this.history = [];
-    this.historyIndex = -1;
-    this.saveSnapshot();
+    this.history = new History(100);
+
+    // Internal clip registry by id for O(1) lookups
+    this._clipMap = new Map();
+
+    // Push initial blank state so undo can return here
+    this._pushSnapshot('new project');
   }
 
   get duration() {
@@ -49,7 +54,7 @@ export class Composition {
       visible: true
     };
     this.tracks.push(track);
-    this.saveSnapshot();
+    this._pushSnapshot('add audio track');
     return track;
   }
 
@@ -57,14 +62,16 @@ export class Composition {
     return this.tracks.find(t => t.id === trackId);
   }
 
-  addClip(clipData) {
+  addClip(clipData, { skipHistory = false } = {}) {
     const requestedStart = clipData.startTime || 0;
     const duration = clipData.duration || 5;
 
     // Find a non-overlapping start time on the requested track
     let startTime = requestedStart;
-    const maxEnd = Math.max(this.duration + 1, requestedStart + duration) + 60;
-    const sameTrackClips = this.clips.filter(c => c.trackId === clipData.trackId).sort((a, b) => a.startTime - b.startTime);
+    const sameTrackClips = this.clips
+      .filter(c => c.trackId === clipData.trackId)
+      .sort((a, b) => a.startTime - b.startTime);
+
     for (const c of sameTrackClips) {
       const cEnd = c.startTime + c.duration;
       if (startTime < cEnd && startTime + duration > c.startTime) {
@@ -73,7 +80,7 @@ export class Composition {
     }
 
     const clip = {
-      id: uid(),
+      id: clipData.id || uid(),
       trackId: clipData.trackId,
       type: clipData.type,
       name: clipData.name || 'Untitled Clip',
@@ -95,42 +102,49 @@ export class Composition {
       fontFamily: clipData.fontFamily || 'Inter',
       color: clipData.color || '#ffffff',
       bgColor: clipData.bgColor || 'transparent',
-      textAlign: clipData.textAlign || 'center'
+      textAlign: clipData.textAlign || 'center',
+      keyframes: clipData.keyframes || null,
+      proxySrc: clipData.proxySrc || null,
+      proxyState: clipData.proxyState || 'none'
     };
 
     this.clips.push(clip);
+    this._clipMap.set(clip.id, clip);
     this.selectedClipId = clip.id;
-    this.saveSnapshot();
+
+    if (!skipHistory) this._pushSnapshot('add clip');
     return clip;
   }
 
-  removeClip(clipId) {
+  removeClip(clipId, { skipHistory = false } = {}) {
     const idx = this.clips.findIndex(c => c.id === clipId);
     if (idx !== -1) {
       this.clips.splice(idx, 1);
+      this._clipMap.delete(clipId);
       if (this.selectedClipId === clipId) {
         this.selectedClipId = null;
       }
-      this.saveSnapshot();
+      if (!skipHistory) this._pushSnapshot('delete clip');
       return true;
     }
     return false;
   }
 
   getClip(clipId) {
-    return this.clips.find(c => c.id === clipId);
+    return this._clipMap.get(clipId) || null;
   }
 
   getSelectedClip() {
     return this.getClip(this.selectedClipId);
   }
 
-  updateClip(clipId, changes) {
+  updateClip(clipId, changes, { skipHistory = false } = {}) {
     const clip = this.getClip(clipId);
     if (!clip) return null;
 
     Object.assign(clip, changes);
-    this.saveSnapshot();
+
+    if (!skipHistory) this._pushSnapshot('update clip');
     return clip;
   }
 
@@ -140,8 +154,6 @@ export class Composition {
       const track = this.getTrack(c.trackId);
       if (track && !track.visible) return false;
       const endTime = c.startTime + c.duration;
-      // Active when the playhead is within [start, end+overlap].
-      // A tiny epsilon prevents floating-point boundary flashes.
       return time + EPS >= c.startTime && time <= endTime + endOverlap + EPS;
     });
   }
@@ -157,7 +169,6 @@ export class Composition {
       if (c.id === clipId) return false;
       if (c.trackId !== trackId) return false;
       const cEnd = c.startTime + c.duration;
-      // Touching edges (end == start) are NOT overlaps.
       return startTime + EPS < cEnd && endTime > c.startTime + EPS;
     });
   }
@@ -165,13 +176,11 @@ export class Composition {
   setDimensions(width, height) {
     this.width = Math.max(100, Math.min(7680, Math.round(width)));
     this.height = Math.max(100, Math.min(7680, Math.round(height)));
-    this.saveSnapshot();
+    this._pushSnapshot('set dimensions');
   }
 
   // --- History ---
-  saveSnapshot() {
-    this.history = this.history.slice(0, this.historyIndex + 1);
-
+  _pushSnapshot(name) {
     const snapshot = {
       width: this.width,
       height: this.height,
@@ -184,35 +193,30 @@ export class Composition {
       selectedClipId: this.selectedClipId
     };
 
-    this.history.push(snapshot);
-    if (this.history.length > 50) this.history.shift();
-    this.historyIndex = this.history.length - 1;
+    const command = {
+      name,
+      do: () => {},
+      undo: () => this._applySnapshot(snapshot),
+      redo: () => this._applySnapshot(snapshot)
+    };
+
+    this.history.push(command);
   }
 
   canUndo() {
-    return this.historyIndex > 0;
+    return this.history.canUndo();
   }
 
   canRedo() {
-    return this.historyIndex < this.history.length - 1;
+    return this.history.canRedo();
   }
 
   undo() {
-    if (this.canUndo()) {
-      this.historyIndex--;
-      this._applySnapshot(this.history[this.historyIndex]);
-      return true;
-    }
-    return false;
+    return this.history.undo();
   }
 
   redo() {
-    if (this.canRedo()) {
-      this.historyIndex++;
-      this._applySnapshot(this.history[this.historyIndex]);
-      return true;
-    }
-    return false;
+    return this.history.redo();
   }
 
   _applySnapshot(snapshot) {
@@ -230,8 +234,15 @@ export class Composition {
       if (elementMap.has(clip.id)) {
         clip.element = elementMap.get(clip.id);
       }
+      this._clipMap.set(clip.id, clip);
       return clip;
     });
+
+    // Clean up stale map entries
+    const validIds = new Set(this.clips.map(c => c.id));
+    for (const id of this._clipMap.keys()) {
+      if (!validIds.has(id)) this._clipMap.delete(id);
+    }
 
     this.selectedClipId = snapshot.selectedClipId;
   }
@@ -239,9 +250,9 @@ export class Composition {
   // --- Project serialization ---
   clear() {
     this.clips = [];
+    this._clipMap.clear();
     this.selectedClipId = null;
-    this.history = [];
-    this.historyIndex = -1;
+    this.history.clear();
     this.tracks = [
       { id: 'v1', type: 'video', name: 'Video 1', locked: false, muted: false, visible: true },
       { id: 'v2', type: 'video', name: 'Video 2', locked: false, muted: false, visible: true },
@@ -250,13 +261,13 @@ export class Composition {
       { id: 'a1', type: 'audio', name: 'Audio 1', locked: false, muted: false, visible: true },
       { id: 'a2', type: 'audio', name: 'Audio 2', locked: false, muted: false, visible: true },
     ];
-    this.saveSnapshot();
+    this._pushSnapshot('new project');
   }
 
   toJSON() {
     return {
       name: 'Viz Project',
-      version: 1,
+      version: 2,
       width: this.width,
       height: this.height,
       tracks: JSON.parse(JSON.stringify(this.tracks)),
@@ -276,6 +287,7 @@ export class Composition {
     this.tracks = data.tracks ? JSON.parse(JSON.stringify(data.tracks)) : this.tracks;
     this.selectedClipId = data.selectedClipId || null;
     this.clips = [];
+    this._clipMap.clear();
 
     for (const c of data.clips || []) {
       const clip = { ...c };
@@ -303,10 +315,22 @@ export class Composition {
       }
 
       this.clips.push(clip);
+      this._clipMap.set(clip.id, clip);
     }
 
-    this.history = [];
-    this.historyIndex = -1;
-    this.saveSnapshot();
+    this.history.clear();
+    this._pushSnapshot('load project');
+  }
+
+  startBatch(name) {
+    this.history.startBatch(name);
+  }
+
+  commitBatch() {
+    this.history.commitBatch();
+  }
+
+  cancelBatch() {
+    this.history.cancelBatch();
   }
 }

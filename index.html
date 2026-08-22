@@ -185,10 +185,55 @@
               <span>EXPORT COMPOSITION</span>
             </div>
             <div class="export-options">
+              <div class="export-option-row">
+                <label for="export-width">Width</label>
+                <input type="number" id="export-width" value="1920" min="100" max="7680">
+              </div>
+              <div class="export-option-row">
+                <label for="export-height">Height</label>
+                <input type="number" id="export-height" value="1080" min="100" max="7680">
+              </div>
+              <div class="export-option-row">
+                <label for="export-fps">FPS</label>
+                <select id="export-fps">
+                  <option value="24">24</option>
+                  <option value="30" selected>30</option>
+                  <option value="60">60</option>
+                </select>
+              </div>
+              <div class="export-option-row">
+                <label for="export-quality">Quality</label>
+                <select id="export-quality">
+                  <option value="low">Low (fast)</option>
+                  <option value="medium">Medium</option>
+                  <option value="high" selected>High</option>
+                </select>
+              </div>
               <button class="export-btn" id="btn-export" type="button">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                 Export Video File
               </button>
+            </div>
+          </section>
+
+          <!-- Settings Panel -->
+          <section class="sidebar-panel">
+            <div class="panel-header compact">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+              <span>EDITOR SETTINGS</span>
+            </div>
+            <div class="export-options">
+              <div class="export-option-row">
+                <label for="setting-snap">Snap</label>
+                <input type="checkbox" id="setting-snap" checked style="width: auto;">
+              </div>
+              <div class="export-option-row">
+                <label for="setting-proxy">Proxy</label>
+                <input type="checkbox" id="setting-proxy" checked style="width: auto;">
+              </div>
+              <div class="export-option-row">
+                <button class="tool-btn wide" id="btn-shortcuts" type="button">Keyboard Shortcuts (?)</button>
+              </div>
             </div>
           </section>
         </aside>

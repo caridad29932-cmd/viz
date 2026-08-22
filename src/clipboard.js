@@ -51,7 +51,10 @@ export class ClipboardManager {
       this.onMediaUrlRegistered?.(newClipData.id, newClipData.src);
     }
 
-    const createdClip = this.comp.addClip(newClipData);
+    this.comp.startBatch('paste clip');
+    const createdClip = this.comp.addClip(newClipData, { skipHistory: true });
+    this.comp.commitBatch();
+
     showToast(`Pasted "${createdClip.name}"`, 'success');
 
     if (this.onCompositionChanged) this.onCompositionChanged();
@@ -98,8 +101,6 @@ export class ClipboardManager {
   }
 
   _revokeClipUrl(clipId) {
-    // The main registry lives in main.js; this is a hook for future centralization.
-    // For now we emit a synthetic unregister event via optional callback.
     this.onMediaUrlRegistered?.(clipId, null);
   }
 
