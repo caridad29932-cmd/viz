@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Viz — Redirecting...</title>
+  <script type="text/javascript">
+    // Single-Page Application fallback for GitHub Pages.
+    // Captures the requested path and forwards the browser to the root
+    // so the app can handle client-side routing if it is ever extended.
+    const segment = 1;
+    const path = location.pathname.split('/').slice(0, 1 + segment).join('/');
+    const redirect = path + '/?p=' + encodeURIComponent(location.pathname.slice(path.length));
+    location.replace(redirect);
+  </script>
+</head>
+<body>
+  <p>Redirecting to Viz...</p>
+</body>
+</html>

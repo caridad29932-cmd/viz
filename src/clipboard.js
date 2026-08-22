@@ -1,0 +1,125 @@
+/**
+ * Clipboard & Object Selection Utility
+ * Supports copy (Ctrl+C), paste (Ctrl+V), duplicate (Ctrl+D), and delete (Del) for composition elements.
+ */
+import { showToast, uid } from './utils.js';
+
+export class ClipboardManager {
+  constructor(composition, getCurrentTime, onCompositionChanged, onMediaUrlRegistered) {
+    this.comp = composition;
+    this.getCurrentTime = getCurrentTime;
+    this.onCompositionChanged = onCompositionChanged;
+    this.onMediaUrlRegistered = onMediaUrlRegistered;
+
+    this.clipboardData = null;
+
+    this._bindHotkeys();
+  }
+
+  copy() {
+    const selected = this.comp.getSelectedClip();
+    if (!selected) {
+      showToast('No element selected to copy', 'warning');
+      return false;
+    }
+
+    const copyData = { ...selected };
+    delete copyData.element;
+    this.clipboardData = copyData;
+
+    showToast(`Copied "${selected.name || selected.type}"`, 'info');
+    return true;
+  }
+
+  paste() {
+    if (!this.clipboardData) {
+      showToast('Clipboard is empty', 'warning');
+      return false;
+    }
+
+    const pasteTime = this.getCurrentTime ? this.getCurrentTime() : this.clipboardData.startTime + 1;
+    const newClipData = {
+      ...this.clipboardData,
+      id: uid(),
+      startTime: pasteTime,
+      x: this.clipboardData.x ? this.clipboardData.x + 30 : 50,
+      y: this.clipboardData.y ? this.clipboardData.y + 30 : 50,
+    };
+
+    const createdElement = this._recreateElement(newClipData);
+    if (createdElement && newClipData.src) {
+      this.onMediaUrlRegistered?.(newClipData.id, newClipData.src);
+    }
+
+    const createdClip = this.comp.addClip(newClipData);
+    showToast(`Pasted "${createdClip.name}"`, 'success');
+
+    if (this.onCompositionChanged) this.onCompositionChanged();
+    return true;
+  }
+
+  duplicate() {
+    if (this.copy()) {
+      return this.paste();
+    }
+    return false;
+  }
+
+  deleteSelected() {
+    const selected = this.comp.getSelectedClip();
+    if (!selected) return false;
+
+    this._revokeClipUrl(selected.id);
+    this.comp.removeClip(selected.id);
+    showToast('Deleted element', 'success');
+
+    if (this.onCompositionChanged) this.onCompositionChanged();
+    return true;
+  }
+
+  _recreateElement(clipData) {
+    if (clipData.type === 'video' && clipData.src) {
+      const video = document.createElement('video');
+      video.src = clipData.src;
+      video.preload = 'auto';
+      clipData.element = video;
+      return video;
+    } else if (clipData.type === 'image' && clipData.src) {
+      const img = new Image();
+      img.src = clipData.src;
+      clipData.element = img;
+      return img;
+    } else if (clipData.type === 'audio' && clipData.src) {
+      const audio = new Audio(clipData.src);
+      clipData.element = audio;
+      return audio;
+    }
+    return null;
+  }
+
+  _revokeClipUrl(clipId) {
+    // The main registry lives in main.js; this is a hook for future centralization.
+    // For now we emit a synthetic unregister event via optional callback.
+    this.onMediaUrlRegistered?.(clipId, null);
+  }
+
+  _bindHotkeys() {
+    window.addEventListener('keydown', (e) => {
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
+
+      if ((e.ctrlKey || e.metaKey) && e.code === 'KeyC') {
+        e.preventDefault();
+        this.copy();
+      } else if ((e.ctrlKey || e.metaKey) && e.code === 'KeyV') {
+        e.preventDefault();
+        this.paste();
+      } else if ((e.ctrlKey || e.metaKey) && e.code === 'KeyD') {
+        e.preventDefault();
+        this.duplicate();
+      } else if (e.code === 'Delete' || e.code === 'Backspace') {
+        e.preventDefault();
+        this.deleteSelected();
+      }
+    });
+  }
+}

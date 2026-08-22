@@ -1,0 +1,11 @@
+node_modules/ 
+dist/ 
+.navy/ 
+*.log 
+*.err 
+.DS_Store 
+Thumbs.db
+comp_lines.txt
+preview.err
+preview.log
+_tmp.js
