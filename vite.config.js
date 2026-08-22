@@ -2,7 +2,7 @@ import { defineConfig } from 'vite';
 
 // Resolve base path from env; defaults to '/Viz/' for the canonical repo.
 // Set BASE_PATH env var to '/' for a custom domain deployment.
-const base = process.env.BASE_PATH || '/viz/';
+const base = process.env.BASE_PATH || '/';
 
 export default defineConfig({
   base,

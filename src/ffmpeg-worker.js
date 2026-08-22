@@ -13,7 +13,7 @@ const CORE_FILES = ['ffmpeg-core.js', 'ffmpeg-core.wasm'];
 
 function resolveCoreUrl(filename) {
   // Vite replaces import.meta.env.BASE_URL with the configured base path.
-  const base = (typeof import.meta !== 'undefined' && import.meta.env?.BASE_URL) || '/Viz/';
+  const base = (typeof import.meta !== 'undefined' && import.meta.env?.BASE_URL) || '/';
   const normalized = base.endsWith('/') ? base : `${base}/`;
   return `${normalized}ffmpeg-core/${filename}`;
 }
