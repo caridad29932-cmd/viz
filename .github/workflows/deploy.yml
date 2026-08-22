@@ -26,6 +26,19 @@ jobs:
       - run: npm run build
         env:
           BASE_PATH: /viz/
+      - name: Verify dist/index.html is built
+        run: |
+          echo "--- dist/index.html first 20 lines ---"
+          head -n 20 dist/index.html
+          if grep -q 'src="./src/main.js"' dist/index.html; then
+            echo "ERROR: dist/index.html still contains raw source path ./src/main.js"
+            exit 1
+          fi
+          if [ ! -f dist/assets/index-*.js ]; then
+            echo "ERROR: no bundled JS found in dist/assets/"
+            exit 1
+          fi
+          echo "dist/ looks correctly built."
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

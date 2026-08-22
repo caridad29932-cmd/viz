@@ -203,5 +203,21 @@
   <div id="toast-container" class="toast-container"></div>
 
   <script type="module" src="./src/main.js"></script>
+  <script>
+    // Fallback diagnostic: if this page is served without being built by Vite,
+    // the module above may 404 or load unbundled. Print a clear message so
+    // developers know GitHub Pages is serving the source tree, not dist/.
+    window.addEventListener('error', function(e) {
+      const msg = e.message || '';
+      if (msg.includes('main.js') || msg.includes('style.css') || location.pathname.endsWith('/src/main.js')) {
+        console.error(
+          '%c[Viz Deploy Error]',
+          'color:#f87171;font-weight:bold;',
+          'GitHub Pages is serving the source files instead of the built dist/. ' +
+          'Go to https://github.com/zrnge/viz/settings/pages and set Source to "GitHub Actions".'
+        );
+      }
+    }, true);
+  </script>
 </body>
 </html>
