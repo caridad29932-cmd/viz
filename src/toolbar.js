@@ -18,6 +18,8 @@ export class Toolbar {
     const tag = e.target.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
     if (e.target.isContentEditable) return true;
+    if (e.target.closest && e.target.closest('[contenteditable]')) return true;
+    if (e.target.closest && e.target.closest('[data-ignore-hotkeys]')) return true;
     return false;
   }
 

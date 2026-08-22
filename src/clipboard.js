@@ -105,7 +105,11 @@ export class ClipboardManager {
 
   _bindHotkeys() {
     window.addEventListener('keydown', (e) => {
-      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
+      const tag = e.target.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (e.target.isContentEditable) return;
+      if (e.target.closest && e.target.closest('[contenteditable]')) return;
+      if (e.target.closest && e.target.closest('[data-ignore-hotkeys]')) return;
 
       if ((e.ctrlKey || e.metaKey) && e.code === 'KeyC') {
         e.preventDefault();

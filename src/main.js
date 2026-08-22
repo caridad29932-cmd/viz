@@ -60,6 +60,9 @@ const progressBar = document.getElementById('progress-bar');
 const progressPercent = document.getElementById('progress-percent');
 const progressTitle = document.getElementById('progress-title');
 const progressSubtitle = document.getElementById('progress-subtitle');
+const progressCancelBtn = document.getElementById('progress-cancel-btn');
+
+let exportAbortController = null;
 
 const mediaUrlRegistry = new Map(); // clipId -> objectUrl for cleanup
 
@@ -472,13 +475,36 @@ async function handleExport() {
     return;
   }
 
+  if (exportAbortController) {
+    exportAbortController.abort();
+  }
+  exportAbortController = new AbortController();
+  const signal = exportAbortController.signal;
+
   pause();
   showProgress('Exporting Composition', 'Rendering video and mixing audio in browser...', 0);
 
+  if (progressCancelBtn) {
+    progressCancelBtn.textContent = 'Cancel Export';
+    progressCancelBtn.disabled = false;
+    progressCancelBtn.onclick = () => {
+      if (exportAbortController) exportAbortController.abort();
+      exportAbortController = null;
+      hideProgress();
+      showToast('Export cancelled', 'info');
+    };
+  }
+
   try {
     const { blob, ext } = await exportComposition(composition, canvasPreview, (progressPct) => {
+      if (signal.aborted) return;
       updateProgress(progressPct);
-    });
+    }, signal);
+
+    if (signal.aborted) {
+      hideProgress();
+      return;
+    }
 
     hideProgress();
 
@@ -493,8 +519,15 @@ async function handleExport() {
   } catch (err) {
     hideProgress();
     console.error('Export error:', err);
+    if (err?.name === 'AbortError' || signal?.aborted) {
+      showToast('Export cancelled', 'info');
+      return;
+    }
     const msg = err?.message || (typeof err === 'string' ? err : 'Export processing failed');
     showToast(`Export failed: ${msg}`, 'error', 6000);
+  } finally {
+    exportAbortController = null;
+    if (progressCancelBtn) progressCancelBtn.disabled = true;
   }
 }
 

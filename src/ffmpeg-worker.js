@@ -257,10 +257,20 @@ function seekVideoToOffset(video, offset) {
 /**
  * High quality offline frame export with audio mixing and FFmpeg MP4 encoding.
  */
-export async function exportComposition(composition, canvasPreview, onProgress) {
+export async function exportComposition(composition, canvasPreview, onProgress, abortSignal) {
   const duration = composition.duration;
   if (duration <= 0) {
     throw new Error('Composition is empty');
+  }
+
+  if (abortSignal?.aborted) {
+    throw new DOMException('Export aborted', 'AbortError');
+  }
+
+  function checkAborted() {
+    if (abortSignal?.aborted) {
+      throw new DOMException('Export aborted', 'AbortError');
+    }
   }
 
   // 1. Ensure FFmpeg is loaded
@@ -268,6 +278,8 @@ export async function exportComposition(composition, canvasPreview, onProgress) 
     if (onProgress) onProgress(2);
     await loadFFmpeg();
   }
+
+  checkAborted();
 
   const inputFiles = [];
   let offscreenCanvas = null;
@@ -285,6 +297,7 @@ export async function exportComposition(composition, canvasPreview, onProgress) 
       console.warn('Audio mixing failed, continuing with video only:', audioErr);
     }
 
+    checkAborted();
     const hasAudio = Boolean(audioBuffer && audioBuffer.length > 0 && audioBuffer.duration > 0.05);
 
     if (onProgress) onProgress(20);
@@ -302,6 +315,7 @@ export async function exportComposition(composition, canvasPreview, onProgress) 
 
     // 4. Render and write each frame to FFmpeg MEMFS
     for (let f = 0; f < totalFrames; f++) {
+      checkAborted();
       const time = f * frameDuration;
 
       const seekPromises = [];
