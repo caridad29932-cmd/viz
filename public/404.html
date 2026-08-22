@@ -7,9 +7,10 @@
     // Single-Page Application fallback for GitHub Pages.
     // Captures the requested path and forwards the browser to the root
     // so the app can handle client-side routing if it is ever extended.
-    const segment = 1;
-    const path = location.pathname.split('/').slice(0, 1 + segment).join('/');
-    const redirect = path + '/?p=' + encodeURIComponent(location.pathname.slice(path.length));
+    const segment = 2; // repo is served under /viz/
+    const parts = location.pathname.split('/').filter(Boolean);
+    const base = '/' + parts.slice(0, segment).join('/') + '/';
+    const redirect = base + '?p=' + encodeURIComponent(location.pathname.slice(base.length - 1));
     location.replace(redirect);
   </script>
 </head>
