@@ -249,17 +249,29 @@ function syncActiveMedia(time, playing) {
   for (const clip of clips) {
     if (!clip.element) continue;
     const trimStart = clip.trimStart || 0;
+    const trimEnd = clip.trimEnd || (trimStart + clip.duration) || (clip.element.duration || Infinity);
+    const clipEndTime = clip.startTime + clip.duration;
     const offset = time - clip.startTime + trimStart;
 
     if (clip.type === 'video' || clip.type === 'audio') {
       const track = composition.getTrack(clip.trackId);
       const isMuted = track ? track.muted : false;
 
+      // Stop at the trimmed end so a 1-minute audio clip trimmed to 30s
+      // does not keep playing past its timeline boundary.
+      const reachedTrimEnd = time >= clipEndTime - 1e-9 || offset >= trimEnd - 1e-9;
+      if (reachedTrimEnd) {
+        if (!clip.element.paused) clip.element.pause();
+        clip.element.currentTime = clamp(offset, 0, trimEnd);
+        clip.element.muted = isMuted;
+        continue;
+      }
+
       // Only seek when the playhead jumps (scrubbing, seeking, or clip boundary).
       // During normal playback the HTMLMediaElement advances on its own clock.
       const threshold = playing ? 0.5 : 0.05;
       if (Math.abs(clip.element.currentTime - offset) > threshold) {
-        clip.element.currentTime = clamp(offset, 0, clip.element.duration || Infinity);
+        clip.element.currentTime = clamp(offset, 0, trimEnd);
       }
 
       if (playing && clip.element.paused) {
