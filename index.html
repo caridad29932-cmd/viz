@@ -8,8 +8,13 @@
   <meta name="theme-color" content="#07070d" />
 
   <!-- COI SERVICE WORKER -->
-  <script>window.VIZ_BASE_PATH = '%BASE_URL%';</script>
-  <script src="%BASE_URL%coi-serviceworker.js"></script>
+  <script>
+    (function() {
+      const path = location.pathname.replace(/\/[^\/]*$/, '/');
+      window.VIZ_BASE_PATH = path.endsWith('/viz/') ? '/viz/' : '/';
+    })();
+  </script>
+  <script src="./coi-serviceworker.js"></script>
 
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -197,6 +202,6 @@
   <!-- Toast Container -->
   <div id="toast-container" class="toast-container"></div>
 
-  <script type="module" src="/src/main.js"></script>
+  <script type="module" src="./src/main.js"></script>
 </body>
 </html>
