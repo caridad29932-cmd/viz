@@ -144,7 +144,7 @@ Then go to **Settings → Pages** and set the source to `gh-pages` branch.
 | `T` | Trim to in/out range |
 | `S` | Split at playhead |
 | `Del` / `Backspace` | Delete element |
-| `E` | Export |
+| `Ctrl+E` | Export |
 | `Ctrl+C` / `Ctrl+V` | Copy / Paste |
 | `Ctrl+D` | Duplicate |
 | `Ctrl+Z` / `Ctrl+Y` | Undo / Redo |

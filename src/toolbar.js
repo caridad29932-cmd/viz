@@ -62,8 +62,6 @@ export class Toolbar {
         return;
       }
 
-      if (e.ctrlKey || e.metaKey) return;
-
       switch (e.code) {
         case 'Space':
           e.preventDefault();
@@ -78,10 +76,12 @@ export class Toolbar {
           e.preventDefault();
           this.callbacks.onDelete?.();
           break;
-        case 'KeyE':
-          e.preventDefault();
-          this.callbacks.onExport?.();
-          break;
+      }
+
+      // Export now requires Ctrl+E so typing 'e' in inputs doesn't trigger it
+      if ((e.ctrlKey || e.metaKey) && e.code === 'KeyE') {
+        e.preventDefault();
+        this.callbacks.onExport?.();
       }
     });
   }
