@@ -42,17 +42,83 @@ export class PropertiesPanel {
     this.onChange = onChange;
     this.onMediaUrlRegistered = onMediaUrlRegistered;
 
+    this._lastSelectedClipId = null;
+    this._lastPanelMode = null; // 'clip' | 'canvas'
+
     this.render();
   }
 
   render() {
     const clip = this.comp.getSelectedClip();
+    const mode = clip ? 'clip' : 'canvas';
+
+    // Preserve the panel DOM when the same clip is still selected so typing
+    // in an input is not interrupted by onCompositionChanged() re-renders.
+    if (mode === 'clip' && this._lastPanelMode === 'clip' && this._lastSelectedClipId === clip.id) {
+      this._updateClipValues(clip);
+      return;
+    }
+
+    this._lastPanelMode = mode;
+    this._lastSelectedClipId = clip ? clip.id : null;
 
     if (!clip) {
       this.renderCanvasSettings();
       return;
     }
 
+    this._renderClipPanel(clip);
+  }
+
+  _updateClipValues(clip) {
+    const setVal = (id, val) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      // Don't overwrite the active input while the user is typing; only update
+      // when the value has actually changed from an external source.
+      if (document.activeElement === el) return;
+      if (el.value !== String(val)) el.value = val;
+    };
+
+    setVal('prop-start', clip.startTime);
+    setVal('prop-duration', clip.duration);
+
+    const isVisual = clip.type === 'video' || clip.type === 'image' || clip.type === 'text';
+    if (isVisual) {
+      setVal('prop-x', clip.x);
+      setVal('prop-y', clip.y);
+      setVal('prop-w', clip.width);
+      setVal('prop-h', clip.height);
+      setVal('prop-opacity', clip.opacity);
+      const opacityVal = document.getElementById('prop-opacity-val');
+      if (opacityVal) opacityVal.textContent = `${Math.round(clip.opacity * 100)}%`;
+    }
+
+    if (clip.type === 'text') {
+      const textEl = document.getElementById('prop-text-content');
+      if (textEl && document.activeElement !== textEl) {
+        const safeText = clip.text || '';
+        if (textEl.value !== safeText) textEl.value = safeText;
+      }
+      setVal('prop-text-size', clip.fontSize);
+      const fontEl = document.getElementById('prop-text-font');
+      if (fontEl && fontEl.value !== clip.fontFamily) fontEl.value = clip.fontFamily;
+      setVal('prop-text-color', clip.color);
+      const bgColor = clip.bgColor === 'transparent' ? '#000000' : clip.bgColor;
+      setVal('prop-text-bg', bgColor);
+      const bgTrans = document.getElementById('prop-text-bg-transparent');
+      if (bgTrans) bgTrans.checked = clip.bgColor === 'transparent';
+    }
+
+    const hasAudio = clip.type === 'video' || clip.type === 'audio';
+    if (hasAudio) {
+      setVal('prop-volume', clip.volume ?? 1);
+      const volVal = document.getElementById('prop-volume-val');
+      if (volVal) volVal.textContent = `${Math.round((clip.volume ?? 1) * 100)}%`;
+    }
+  }
+
+  _renderClipPanel(clip) {
     const isVisual = clip.type === 'video' || clip.type === 'image' || clip.type === 'text';
     const isText = clip.type === 'text';
     const hasAudio = clip.type === 'video' || clip.type === 'audio';
@@ -160,7 +226,7 @@ export class PropertiesPanel {
         ` : ''}
 
         <div class="prop-actions">
-          <button class="tool-btn danger wide" id="prop-delete-btn">
+          <button class="tool-btn danger wide" id="prop-delete-btn" type="button">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
             Delete Element
           </button>
