@@ -2,7 +2,8 @@
  * Viz — First Local Video Editor
  * Main Application Orchestrator
  */
-import './style.css';import { BiblicalGenerator } from './biblical-generator.js';
+import './style.css';
+import { BiblicalGenerator } from './biblical-generator.js';
 import { Composition } from './composition.js';
 import { CanvasPreview } from './canvas-preview.js';
 import { MultiTimeline } from './multi-timeline.js';
