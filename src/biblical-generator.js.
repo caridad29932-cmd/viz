@@ -1,10 +1,14 @@
+/**
+ * Viz — Biblical Generator
+ */
+
 export class BiblicalGenerator {
   constructor() {
     this.scenes = [];
     this.title = "Generador Bíblico 3D";
   }
 
-  createProject(title) {
+  createProject(title = "Generador Bíblico 3D") {
     this.title = title;
     this.scenes = [];
     return this;
@@ -12,10 +16,11 @@ export class BiblicalGenerator {
 
   addScene(description, duration = 10) {
     this.scenes.push({
+      id: crypto.randomUUID(),
       description,
-      duration,
-      id: crypto.randomUUID()
+      duration
     });
+
     return this.scenes;
   }
 
@@ -24,7 +29,8 @@ export class BiblicalGenerator {
       title: this.title,
       scenes: this.scenes,
       totalDuration: this.scenes.reduce(
-        (total, scene) => total + scene.duration, 0
+        (total, scene) => total + scene.duration,
+        0
       )
     };
   }
