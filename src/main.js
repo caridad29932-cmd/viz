@@ -81,6 +81,8 @@ const mediaUrlRegistry = new Map(); // clipId -> objectUrl for cleanup
 
 // --- Initialization ---
 function initApp() {
+  const biblicalGenerator = new BiblicalGenerator();
+window.biblicalGenerator = biblicalGenerator;
   store = createDefaultStore();
   composition = new Composition(1920, 1080);
 
