@@ -299,8 +299,11 @@ document.getElementById('add-biblical-scene').addEventListener('click', function
     alert('Escribe la descripción de la escena.');
     return;
   }
-  const project = window.biblicalGenerator.createProject(title);
-  project.addScene(description, 10);
+  const project = window.biblicalGenerator;
+if (project.scenes.length === 0) {
+  project.createProject(title);
+}
+project.addScene(description, 10);
   document.getElementById('biblical-status').textContent =
     'Escena agregada: ' + project.getProject().totalDuration + ' segundos.';
 });
