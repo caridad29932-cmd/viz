@@ -283,5 +283,27 @@
       }
     })();
   </script>
+  <section id="biblical-generator" style="padding:20px;background:#171725;color:white;">
+  <h2>Generador Bíblico 3D</h2>
+  <input id="biblical-title" placeholder="Nombre de la historia" style="padding:12px;width:90%;">
+  <textarea id="biblical-scene" placeholder="Describe la primera escena" style="padding:12px;width:90%;height:100px;"></textarea>
+  <button id="add-biblical-scene">Agregar escena</button>
+  <p id="biblical-status">Prepara tu historia bíblica.</p>
+</section>
+
+<script>
+document.getElementById('add-biblical-scene').addEventListener('click', function() {
+  const title = document.getElementById('biblical-title').value || 'Historia bíblica';
+  const description = document.getElementById('biblical-scene').value;
+  if (!description) {
+    alert('Escribe la descripción de la escena.');
+    return;
+  }
+  const project = window.biblicalGenerator.createProject(title);
+  project.addScene(description, 10);
+  document.getElementById('biblical-status').textContent =
+    'Escena agregada: ' + project.getProject().totalDuration + ' segundos.';
+});
+</script>
 </body>
 </html>
