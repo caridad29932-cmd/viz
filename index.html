@@ -351,7 +351,7 @@
         'Art direction: historically grounded ancient Near Eastern architecture, fabrics and props; expressive human characters; detailed environments; coherent character appearance.',
         'Output: ' + (project.aspectRatio || '16:9') + ', 4K-quality detail, clean composition.',
         'Avoid: subtitles, captions, logos, watermarks, modern objects, distorted hands, extra fingers, duplicate people.'
-      ].join('\\n');
+      ].join('\n');
     }
     function renderScenes() {
       const project = engine.getProject();
@@ -372,9 +372,7 @@
               '<pre style="white-space:pre-wrap;overflow-wrap:anywhere;background:#151522;padding:10px;border-radius:8px;">' + escapeHtml(prompt) + '</pre>' +
             '</details>' +
             '<div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:8px;">' +
-              '<button type="button" data-copy-scene-prompt="' + scene.id + '">Copiar prompt IA</button>' +
-              '<button type="button" data-generate-ai-video="' + scene.id + '">🎬 Generar video IA</button>' +
-              '<button type="button" data-open-video-generator="' + scene.id + '">Abrir FreeGenVideo</button>' +
+              '<button type="button" data-generate-ai-video="' + scene.id + '">🎬 Generar video aquí</button>' +
               '<button type="button" data-add-scene-media="' + scene.id + '" data-media-kind="image">Añadir imagen a timeline</button>' +
               '<button type="button" data-add-scene-media="' + scene.id + '" data-media-kind="video">Añadir video a timeline</button>' +
               '<button type="button" data-remove-scene="' + scene.id + '">Eliminar</button>' +
@@ -512,20 +510,6 @@
     });
 
     list.addEventListener('click', async function (event) {
-      const copyButton = event.target.closest('[data-copy-scene-prompt]');
-      if (copyButton) {
-        const project = engine.getProject();
-        const scene = project?.scenes.find(item => item.id === copyButton.dataset.copyScenePrompt);
-        if (!scene) return;
-        const prompt = buildScenePrompt(scene, project);
-        try {
-          await navigator.clipboard.writeText(prompt);
-          status.textContent = 'Prompt de la escena copiado. Pégalo en el generador de imágenes o video.';
-        } catch (_) {
-          status.textContent = 'Abre el apartado Prompt cinematográfico para copiar el texto manualmente.';
-        }
-        return;
-      }
       const videoButton = event.target.closest('[data-generate-ai-video]');
       if (videoButton) {
         const project = engine.getProject();
@@ -578,12 +562,6 @@
           videoButton.disabled = false;
           videoButton.textContent = '🎬 Generar video IA';
         }
-        return;
-      }
-      const openButton = event.target.closest('[data-open-video-generator]');
-      if (openButton) {
-        window.open('https://freegen.video/', '_blank', 'noopener');
-        status.textContent = 'FreeGenVideo abierto. Copia el prompt de esta escena y genera tu video.';
         return;
       }
       const mediaButton = event.target.closest('[data-add-scene-media]');
