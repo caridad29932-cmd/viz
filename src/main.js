@@ -112,7 +112,6 @@ function initApp() {
       ? Math.min(scene.duration, clip.element.duration || scene.duration)
       : scene.duration;
     composition.updateClip(clip.id, {
-      startTime,
       duration: Math.max(0.1, mediaDuration),
       name: 'Escena ' + scene.number + ' · ' + file.name
     });
