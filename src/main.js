@@ -93,6 +93,33 @@ function initApp() {
     store
   );
 
+  // Bridge used by the Biblical Generator to place downloaded scene media
+  // directly on the editor timeline at the scene's cumulative start time.
+  window.vizAddBiblicalMedia = async (file, sceneId) => {
+    const project = biblicalGenerator.getProject();
+    if (!project) throw new Error('Primero crea un proyecto bíblico.');
+    const sceneIndex = project.scenes.findIndex(scene => scene.id === sceneId);
+    if (sceneIndex < 0) throw new Error('No se encontró esa escena.');
+    const scene = project.scenes[sceneIndex];
+    const startTime = project.scenes
+      .slice(0, sceneIndex)
+      .reduce((total, item) => total + item.duration, 0);
+
+    const clip = await mediaManager.importFile(file, { startTime });
+    if (!clip) throw new Error('No se pudo importar el archivo multimedia.');
+
+    const mediaDuration = clip.type === 'video' && Number.isFinite(clip.element?.duration)
+      ? Math.min(scene.duration, clip.element.duration || scene.duration)
+      : scene.duration;
+    composition.updateClip(clip.id, {
+      startTime,
+      duration: Math.max(0.1, mediaDuration),
+      name: 'Escena ' + scene.number + ' · ' + file.name
+    });
+    onCompositionChanged();
+    return clip;
+  };
+
   clipboardManager = new ClipboardManager(
     composition,
     () => canvasPreview ? canvasPreview.currentTime : 0,
