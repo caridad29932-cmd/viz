@@ -299,7 +299,7 @@
 </section>
 
 <script>
-(function () {
+window.addEventListener('load', function () {
   const byId = id => document.getElementById(id);
   const status = byId('biblical-status');
   const list = byId('biblical-scenes');
@@ -375,7 +375,7 @@
 
   engine.subscribe(renderScenes);
   renderScenes();
-})();
+});
 </script>
 </body>
 </html>
