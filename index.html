@@ -283,99 +283,146 @@
       }
     })();
   </script>
-  <section id="biblical-generator" style="padding:20px;background:#171725;color:white;max-height:55vh;overflow:auto;">
-  <h2>Generador Bíblico 3D</h2>
-  <p>Construye tu historia por escenas y organiza el guion antes de producir el video.</p>
-  <input id="biblical-title" placeholder="Nombre de la historia" style="padding:12px;width:100%;margin:6px 0;">
-  <textarea id="biblical-scene" placeholder="Describe la escena: personajes, lugar, acción, época y ambiente..." style="padding:12px;width:100%;height:100px;margin:6px 0;"></textarea>
-  <div style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0;">
-    <label>Duración (segundos) <input id="biblical-duration" type="number" min="1" max="600" value="10" style="width:80px;padding:8px;"></label>
-    <input id="biblical-reference" placeholder="Referencia bíblica (opcional)" style="padding:8px;flex:1;min-width:180px;">
-  </div>
-  <button id="add-biblical-scene" type="button">Agregar escena</button>
-  <button id="export-biblical-project" type="button">Guardar guion JSON</button>
-  <p id="biblical-status" role="status">Prepara tu historia bíblica.</p>
-  <div id="biblical-scenes" aria-live="polite"></div>
-</section>
+  <button id="open-biblical-generator" type="button" aria-haspopup="dialog"
+    style="position:fixed;right:16px;bottom:16px;z-index:9000;padding:14px 18px;border:0;border-radius:999px;background:linear-gradient(135deg,#8b5cf6,#22d3ee);color:#fff;font-weight:800;box-shadow:0 8px 28px #0008;cursor:pointer;">
+    ✨ Generador Bíblico 3D
+  </button>
 
-<script>
-window.addEventListener('load', function () {
-  const byId = id => document.getElementById(id);
-  const status = byId('biblical-status');
-  const list = byId('biblical-scenes');
-  const engine = window.biblicalGenerator;
+  <section id="biblical-generator" role="dialog" aria-modal="true" aria-labelledby="biblical-heading" hidden
+    style="position:fixed;inset:3vh 3vw;z-index:9100;padding:18px;background:#11111d;color:#f5f5ff;border:1px solid #45405f;border-radius:16px;box-shadow:0 18px 70px #000c;max-height:94vh;overflow:auto;">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;position:sticky;top:-18px;background:#11111d;padding:8px 0;z-index:2;">
+      <div><h2 id="biblical-heading" style="margin:0 0 4px;">Generador Bíblico 3D</h2>
+      <small style="color:#aaa8c5;">Crea escenas, organiza tu historia y guarda tu proyecto.</small></div>
+      <button id="close-biblical-generator" type="button" aria-label="Cerrar generador" style="padding:10px 14px;">✕ Cerrar</button>
+    </div>
+    <label for="biblical-title">Nombre de la historia</label>
+    <input id="biblical-title" placeholder="Ej. Rut y Noemí" style="display:block;padding:12px;width:100%;margin:6px 0 12px;border-radius:8px;">
+    <label for="biblical-scene">Describe la escena: personajes, lugar, acción, época, vestuario, iluminación y ambiente</label>
+    <textarea id="biblical-scene" placeholder="Describe con detalle lo que debe verse en esta escena..." style="display:block;padding:12px;width:100%;height:120px;margin:6px 0 12px;border-radius:8px;"></textarea>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 12px;">
+      <label>Duración (segundos)<input id="biblical-duration" type="number" min="1" max="600" value="10" style="display:block;width:120px;padding:9px;"></label>
+      <label style="flex:1;min-width:180px;">Referencia bíblica<input id="biblical-reference" placeholder="Ej. Rut 1:1-5" style="display:block;width:100%;padding:9px;"></label>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <button id="add-biblical-scene" type="button">＋ Agregar escena</button>
+      <button id="export-biblical-project" type="button">Guardar proyecto JSON</button>
+      <button id="import-biblical-project" type="button">Abrir proyecto JSON</button>
+      <input id="biblical-import-file" type="file" accept=".json,application/json" hidden>
+      <button id="copy-biblical-prompts" type="button">Copiar guion / prompts</button>
+      <button id="new-biblical-project" type="button">Nuevo proyecto</button>
+    </div>
+    <p id="biblical-status" role="status" aria-live="polite" style="color:#67e8f9;">Tu proyecto se guarda automáticamente en este navegador.</p>
+    <div id="biblical-scenes" aria-live="polite"></div>
+  </section>
 
-  function renderScenes() {
-    const project = engine.getProject();
-    if (!project) {
-      list.innerHTML = '';
-      return;
-    }
-    list.innerHTML = '<h3>Escenas del guion (' + project.sceneCount + ') · ' +
-      project.totalDuration + ' segundos</h3>' +
-      project.scenes.map(scene =>
-        '<article style="padding:12px;margin:8px 0;background:#222238;border-radius:8px;">' +
-          '<strong>' + scene.number + '. ' + escapeHtml(scene.title) + '</strong>' +
-          '<p style="white-space:pre-wrap;">' + escapeHtml(scene.description) + '</p>' +
-          '<small>' + scene.duration + ' s · ' + escapeHtml(scene.bibleReference || 'Sin referencia') + '</small> ' +
-          '<button type="button" data-remove-scene="' + scene.id + '" style="float:right;">Eliminar</button>' +
-        '</article>'
-      ).join('');
-  }
+  <script>
+  window.addEventListener('load', function () {
+    const byId = id => document.getElementById(id);
+    const panel = byId('biblical-generator');
+    const status = byId('biblical-status');
+    const list = byId('biblical-scenes');
+    const engine = window.biblicalGenerator;
 
-  function escapeHtml(value) {
-    return String(value).replace(/[&<>"']/g, char => ({
-      '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
-    })[char]);
-  }
-
-  byId('add-biblical-scene').addEventListener('click', function () {
-    const title = byId('biblical-title').value.trim() || 'Historia bíblica';
-    const description = byId('biblical-scene').value.trim();
-    const duration = Number(byId('biblical-duration').value) || 10;
-    const bibleReference = byId('biblical-reference').value.trim();
-
-    if (!description) {
-      status.textContent = 'Escribe la descripción de la escena.';
-      byId('biblical-scene').focus();
+    if (!engine) {
+      status.textContent = 'No se pudo iniciar el motor bíblico. Recarga la página.';
       return;
     }
 
-    try {
-      if (!engine.getProject()) engine.createProject(title);
-      engine.addScene(description, duration, { bibleReference });
-      byId('biblical-scene').value = '';
-      byId('biblical-reference').value = '';
+    function openPanel() { panel.hidden = false; byId('biblical-title').focus(); }
+    function closePanel() { panel.hidden = true; byId('open-biblical-generator').focus(); }
+    function renderScenes() {
       const project = engine.getProject();
-      status.textContent = 'Escena agregada. Total: ' + project.sceneCount +
-        ' escenas · ' + project.totalDuration + ' segundos.';
+      if (!project) {
+        list.innerHTML = '<p>Aún no hay escenas. Escribe la primera arriba.</p>';
+        return;
+      }
+      byId('biblical-title').value = project.title;
+      list.innerHTML = '<h3>' + escapeHtml(project.title) + ' · ' + project.sceneCount +
+        ' escenas · ' + project.totalDuration + ' segundos</h3>' +
+        project.scenes.map(scene =>
+          '<article style="padding:12px;margin:8px 0;background:#222238;border:1px solid #393653;border-radius:10px;">' +
+            '<strong>' + scene.number + '. ' + escapeHtml(scene.title) + '</strong>' +
+            '<p style="white-space:pre-wrap;">' + escapeHtml(scene.description) + '</p>' +
+            '<small>' + scene.duration + ' s · ' + escapeHtml(scene.bibleReference || 'Sin referencia') + '</small> ' +
+            '<button type="button" data-remove-scene="' + scene.id + '" style="float:right;">Eliminar</button>' +
+          '</article>'
+        ).join('');
+    }
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, char => ({
+        '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
+      })[char]);
+    }
+
+    byId('open-biblical-generator').addEventListener('click', openPanel);
+    byId('close-biblical-generator').addEventListener('click', closePanel);
+    byId('add-biblical-scene').addEventListener('click', function () {
+      const title = byId('biblical-title').value.trim() || 'Historia bíblica';
+      const description = byId('biblical-scene').value.trim();
+      const duration = Number(byId('biblical-duration').value) || 10;
+      const bibleReference = byId('biblical-reference').value.trim();
+      if (!description) {
+        status.textContent = 'Escribe la descripción de la escena.';
+        byId('biblical-scene').focus();
+        return;
+      }
+      try {
+        if (!engine.getProject()) engine.createProject(title);
+        else if (engine.getProject().title !== title) {
+          engine.project.title = title;
+        }
+        engine.addScene(description, duration, { bibleReference });
+        byId('biblical-scene').value = '';
+        byId('biblical-reference').value = '';
+        status.textContent = 'Escena agregada y guardada automáticamente.';
+        renderScenes();
+      } catch (error) { status.textContent = error.message; }
+    });
+    byId('export-biblical-project').addEventListener('click', function () {
+      try { engine.downloadProject(); status.textContent = 'Proyecto descargado en JSON.'; }
+      catch (error) { status.textContent = error.message; }
+    });
+    byId('import-biblical-project').addEventListener('click', () => byId('biblical-import-file').click());
+    byId('biblical-import-file').addEventListener('change', async function (event) {
+      const file = event.target.files && event.target.files[0];
+      if (!file) return;
+      try {
+        engine.loadProject(await file.text());
+        status.textContent = 'Proyecto abierto correctamente.';
+        renderScenes();
+      } catch (error) { status.textContent = 'No se pudo abrir: ' + error.message; }
+      event.target.value = '';
+    });
+    byId('copy-biblical-prompts').addEventListener('click', async function () {
+      const project = engine.getProject();
+      if (!project || !project.scenes.length) { status.textContent = 'Agrega escenas primero.'; return; }
+      const text = project.scenes.map(scene =>
+        'ESCENA ' + scene.number + ' — ' + scene.title + '\n' +
+        'Duración: ' + scene.duration + ' segundos\n' +
+        'Referencia: ' + (scene.bibleReference || 'No indicada') + '\n' +
+        'Descripción visual: ' + scene.description + '\n' +
+        'Estilo: ' + scene.visualStyle + '\nCámara: ' + scene.camera
+      ).join('\n\n');
+      try { await navigator.clipboard.writeText(text); status.textContent = 'Guion copiado. Ya puedes pegarlo en tu herramienta de imágenes o video.'; }
+      catch (_) { status.textContent = 'No se pudo copiar automáticamente. Descarga el JSON del proyecto.'; }
+    });
+    byId('new-biblical-project').addEventListener('click', function () {
+      if (!confirm('¿Crear una historia nueva? El proyecto guardado en este navegador será reemplazado.')) return;
+      engine.createProject(byId('biblical-title').value.trim() || 'Historia bíblica');
+      status.textContent = 'Proyecto nuevo creado.';
       renderScenes();
-    } catch (error) {
-      status.textContent = error.message;
-    }
-  });
-
-  byId('export-biblical-project').addEventListener('click', function () {
-    try {
-      engine.downloadProject();
-      status.textContent = 'Guion guardado en formato JSON.';
-    } catch (error) {
-      status.textContent = error.message;
-    }
-  });
-
-  list.addEventListener('click', function (event) {
-    const button = event.target.closest('[data-remove-scene]');
-    if (!button) return;
-    engine.removeScene(button.getAttribute('data-remove-scene'));
+    });
+    list.addEventListener('click', function (event) {
+      const button = event.target.closest('[data-remove-scene]');
+      if (!button) return;
+      engine.removeScene(button.getAttribute('data-remove-scene'));
+      renderScenes();
+      status.textContent = 'Escena eliminada. Cambios guardados.';
+    });
+    engine.subscribe(renderScenes);
     renderScenes();
-    const project = engine.getProject();
-    status.textContent = 'Escena eliminada. Quedan ' + project.sceneCount + ' escenas.';
   });
+  </script>
 
-  engine.subscribe(renderScenes);
-  renderScenes();
-});
-</script>
 </body>
 </html>
