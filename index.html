@@ -33,6 +33,7 @@
     })();
   </script>
 
+  <script src="https://js.puter.com/v2/"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
@@ -295,6 +296,13 @@
       <small style="color:#aaa8c5;">Crea escenas, organiza tu historia y guarda tu proyecto.</small></div>
       <button id="close-biblical-generator" type="button" aria-label="Cerrar generador" style="padding:10px 14px;">✕ Cerrar</button>
     </div>
+    <section style="padding:14px;margin:12px 0;background:#1c1b2d;border:1px solid #5b4a87;border-radius:12px;">
+      <h3 style="margin:0 0 8px;">✨ Crear una historia completa con IA</h3>
+      <p style="margin:0 0 8px;color:#c9c5df;">Escribe el nombre o la historia. La IA la convertirá en escenas ordenadas automáticamente.</p>
+      <textarea id="biblical-story" placeholder="Ej. David y Goliat: desde que David llega al campamento hasta que vence al gigante..." style="display:block;width:100%;min-height:105px;padding:12px;border-radius:8px;"></textarea>
+      <button id="generate-biblical-story" type="button" style="margin-top:8px;padding:12px 16px;background:#7654d6;color:white;border:0;border-radius:8px;font-weight:700;">✨ Crear escenas automáticamente</button>
+      <small style="display:block;margin-top:8px;color:#aaa8c5;">La planificación usa IA. Para crear videos reales, cada escena tiene su propio botón de generación.</small>
+    </section>
     <label for="biblical-title">Nombre de la historia</label>
     <input id="biblical-title" placeholder="Ej. Rut y Noemí" style="display:block;padding:12px;width:100%;margin:6px 0 12px;border-radius:8px;">
     <label for="biblical-scene">Describe la escena: personajes, lugar, acción, época, vestuario, iluminación y ambiente</label>
@@ -365,11 +373,13 @@
             '</details>' +
             '<div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:8px;">' +
               '<button type="button" data-copy-scene-prompt="' + scene.id + '">Copiar prompt IA</button>' +
+              '<button type="button" data-generate-ai-video="' + scene.id + '">🎬 Generar video IA</button>' +
               '<button type="button" data-open-video-generator="' + scene.id + '">Abrir FreeGenVideo</button>' +
               '<button type="button" data-add-scene-media="' + scene.id + '" data-media-kind="image">Añadir imagen a timeline</button>' +
               '<button type="button" data-add-scene-media="' + scene.id + '" data-media-kind="video">Añadir video a timeline</button>' +
               '<button type="button" data-remove-scene="' + scene.id + '">Eliminar</button>' +
             '</div>' +
+            '<div data-ai-video="' + scene.id + '" style="margin-top:10px;"></div>' +
           '</article>';
         }).join('');
     }
@@ -378,6 +388,52 @@
         '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
       })[char]);
     }
+
+    byId('generate-biblical-story').addEventListener('click', async function () {
+      const story = byId('biblical-story').value.trim();
+      if (!story) { status.textContent = 'Escribe el nombre o el relato bíblico primero.'; return; }
+      if (!window.puter?.ai?.chat) { status.textContent = 'No se pudo cargar el servicio de IA. Recarga la página e inténtalo otra vez.'; return; }
+      const button = byId('generate-biblical-story');
+      button.disabled = true;
+      button.textContent = '⏳ La IA está preparando las escenas...';
+      status.textContent = 'Analizando la historia y construyendo el guion cinematográfico...';
+      try {
+        const prompt = [
+          'Eres guionista y director de cine bíblico. Convierte la historia siguiente en entre 5 y 8 escenas consecutivas, fieles al relato bíblico y sin inventar milagros ni cambiar el desenlace.',
+          'Devuelve SOLAMENTE un arreglo JSON válido, sin Markdown ni explicaciones.',
+          'Cada objeto debe tener: title (corto), description (descripción visual detallada en español, con personajes, acciones, lugar, época, vestuario, iluminación y continuidad visual), duration (número entre 5 y 12), bibleReference (referencia si se conoce; no inventes capítulo y versículo), narration (narración breve en español), camera (movimiento/plano cinematográfico).',
+          'Mantén los mismos rasgos, ropa y apariencia de cada personaje en todas las escenas. Orden cronológico. Estética de película bíblica realista 3D.',
+          'Historia: ' + story
+        ].join('\n\n');
+        const response = await window.puter.ai.chat(prompt);
+        let output = typeof response === 'string' ? response :
+          response?.message?.content ?? response?.text ?? response?.content ?? '';
+        if (Array.isArray(output)) output = output.map(part => part.text || '').join('\n');
+        output = String(output).replace(/^﻿/, '').trim();
+        const first = output.indexOf('['), last = output.lastIndexOf(']');
+        if (first < 0 || last <= first) throw new Error('La IA no devolvió una lista de escenas válida. Inténtalo de nuevo.');
+        const scenes = JSON.parse(output.slice(first, last + 1));
+        if (!Array.isArray(scenes) || !scenes.length) throw new Error('La IA no creó escenas.');
+        const title = story.length > 55 ? story.slice(0, 52) + '...' : story;
+        engine.createProject(title, { description: story, bibleReference: scenes[0].bibleReference || '' });
+        scenes.forEach((scene, index) => engine.addScene(
+          scene.description || scene.title || ('Escena ' + (index + 1)),
+          Number(scene.duration) || 8,
+          { title: scene.title || ('Escena ' + (index + 1)), bibleReference: scene.bibleReference || '',
+            narration: scene.narration || '', camera: scene.camera || 'Plano cinematográfico',
+            visualStyle: 'Cinematográfico bíblico realista 3D' }
+        ));
+        byId('biblical-title').value = title;
+        status.textContent = '¡Listo! La IA creó ' + scenes.length + ' escenas. Ahora puedes generar el video de cada una.';
+        renderScenes();
+      } catch (error) {
+        console.error('[VIZ Biblical AI]', error);
+        status.textContent = 'No se pudo crear el guion: ' + (error?.message || 'Error de IA');
+      } finally {
+        button.disabled = false;
+        button.textContent = '✨ Crear escenas automáticamente';
+      }
+    });
 
     byId('open-biblical-generator').addEventListener('click', openPanel);
     byId('close-biblical-generator').addEventListener('click', closePanel);
@@ -467,6 +523,60 @@
           status.textContent = 'Prompt de la escena copiado. Pégalo en el generador de imágenes o video.';
         } catch (_) {
           status.textContent = 'Abre el apartado Prompt cinematográfico para copiar el texto manualmente.';
+        }
+        return;
+      }
+      const videoButton = event.target.closest('[data-generate-ai-video]');
+      if (videoButton) {
+        const project = engine.getProject();
+        const scene = project?.scenes.find(item => item.id === videoButton.dataset.generateAiVideo);
+        if (!scene) return;
+        if (!window.puter?.ai?.txt2vid) { status.textContent = 'El servicio de video IA no está disponible. Recarga la página.'; return; }
+        videoButton.disabled = true;
+        videoButton.textContent = '⏳ Generando video...';
+        status.textContent = 'Generando el clip de la escena ' + scene.number + '. Puede tardar varios minutos...';
+        try {
+          const videoPrompt = buildScenePrompt(scene, project) +
+            '\nMotion: animate the described action naturally; subtle facial and body movement, realistic cloth and environmental motion, smooth cinematic camera movement. Preserve the same character appearance.';
+          const video = await window.puter.ai.txt2vid(videoPrompt, {
+            seconds: Math.min(8, Math.max(5, Number(scene.duration) || 6)),
+            size: '1280x720',
+            puter_output_path: 'VIZ-Biblical/' + project.id + '/scene-' + scene.number + '.mp4'
+          });
+          const slot = list.querySelector('[data-ai-video="' + scene.id + '"]');
+          if (slot) {
+            slot.replaceChildren();
+            video.controls = true;
+            video.playsInline = true;
+            video.style.width = '100%';
+            video.style.maxHeight = '360px';
+            video.style.borderRadius = '10px';
+            slot.appendChild(video);
+            const download = document.createElement('a');
+            download.href = video.src;
+            download.download = 'escena-' + scene.number + '.mp4';
+            download.textContent = '⬇ Descargar video de esta escena';
+            download.style.cssText = 'display:inline-block;margin-top:8px;color:#8eeaff;';
+            slot.appendChild(download);
+          }
+          status.textContent = '¡Video generado! Puedes verlo y descargarlo. El enlace del proveedor puede ser temporal.';
+          try {
+            const fileResponse = await fetch(video.src);
+            if (fileResponse.ok && typeof window.vizAddBiblicalMedia === 'function') {
+              const blob = await fileResponse.blob();
+              const file = new File([blob], 'escena-' + scene.number + '.mp4', { type: blob.type || 'video/mp4' });
+              await window.vizAddBiblicalMedia(file, scene.id);
+              status.textContent = '¡Video generado y añadido a la línea de tiempo!';
+            }
+          } catch (importError) {
+            console.info('[VIZ] El video quedó listo para descargar; no se pudo importar automáticamente:', importError);
+          }
+        } catch (error) {
+          console.error('[VIZ video]', error);
+          status.textContent = 'No se pudo generar el video: ' + (error?.message || 'Error del proveedor');
+        } finally {
+          videoButton.disabled = false;
+          videoButton.textContent = '🎬 Generar video IA';
         }
         return;
       }
