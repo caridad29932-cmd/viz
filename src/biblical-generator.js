@@ -25,6 +25,14 @@ export class BiblicalGenerator {
     this.project = null;
     this.scenes = [];
     this.listeners = new Set();
+
+    // Restore the latest biblical project automatically on this device.
+    try {
+      const saved = globalThis.localStorage?.getItem('viz-biblical-project-v1');
+      if (saved) this.loadProject(saved);
+    } catch (error) {
+      console.warn('No se pudo recuperar el proyecto bíblico guardado:', error);
+    }
   }
 
   createProject(title = 'Historia bíblica', metadata = {}) {
@@ -40,6 +48,7 @@ export class BiblicalGenerator {
       version: 1
     };
     this.scenes = [];
+    this._touch();
     this._emit('project-created');
     return this.getProject();
   }
@@ -205,7 +214,16 @@ export class BiblicalGenerator {
   }
 
   _touch() {
-    if (this.project) this.project.updatedAt = new Date().toISOString();
+    if (!this.project) return;
+    this.project.updatedAt = new Date().toISOString();
+    try {
+      globalThis.localStorage?.setItem(
+        'viz-biblical-project-v1',
+        JSON.stringify(this.getProject())
+      );
+    } catch (error) {
+      console.warn('No se pudo guardar el proyecto bíblico en este navegador:', error);
+    }
   }
 
   _emit(type, scene = null) {
