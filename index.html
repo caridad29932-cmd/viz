@@ -312,6 +312,7 @@
       <button id="new-biblical-project" type="button">Nuevo proyecto</button>
     </div>
     <p id="biblical-status" role="status" aria-live="polite" style="color:#67e8f9;">Tu proyecto se guarda automáticamente en este navegador.</p>
+    <input id="biblical-scene-media-file" type="file" accept="image/*,video/mp4,video/webm,video/quicktime" hidden>
     <div id="biblical-scenes" aria-live="polite"></div>
   </section>
 
@@ -330,6 +331,20 @@
 
     function openPanel() { panel.hidden = false; byId('biblical-title').focus(); }
     function closePanel() { panel.hidden = true; byId('open-biblical-generator').focus(); }
+    function buildScenePrompt(scene, project) {
+      return [
+        'Create a cinematic biblical 3D scene for a high-end feature film.',
+        'Story: ' + project.title + '.',
+        'Biblical reference: ' + (scene.bibleReference || project.bibleReference || 'historical biblical setting') + '.',
+        'Scene action and visual details: ' + scene.description,
+        'Visual direction: ' + (scene.visualStyle || project.style || 'cinematic realistic 3D'),
+        'Camera: ' + (scene.camera || 'slow cinematic camera movement, clear composition'),
+        'Lighting: natural dramatic film lighting, realistic shadows, volumetric atmosphere.',
+        'Art direction: historically grounded ancient Near Eastern architecture, fabrics and props; expressive human characters; detailed environments; coherent character appearance.',
+        'Output: ' + (project.aspectRatio || '16:9') + ', 4K-quality detail, clean composition.',
+        'Avoid: subtitles, captions, logos, watermarks, modern objects, distorted hands, extra fingers, duplicate people.'
+      ].join('\\n');
+    }
     function renderScenes() {
       const project = engine.getProject();
       if (!project) {
@@ -339,14 +354,24 @@
       byId('biblical-title').value = project.title;
       list.innerHTML = '<h3>' + escapeHtml(project.title) + ' · ' + project.sceneCount +
         ' escenas · ' + project.totalDuration + ' segundos</h3>' +
-        project.scenes.map(scene =>
-          '<article style="padding:12px;margin:8px 0;background:#222238;border:1px solid #393653;border-radius:10px;">' +
+        project.scenes.map(scene => {
+          const prompt = buildScenePrompt(scene, project);
+          return '<article style="padding:12px;margin:8px 0;background:#222238;border:1px solid #393653;border-radius:10px;">' +
             '<strong>' + scene.number + '. ' + escapeHtml(scene.title) + '</strong>' +
             '<p style="white-space:pre-wrap;">' + escapeHtml(scene.description) + '</p>' +
-            '<small>' + scene.duration + ' s · ' + escapeHtml(scene.bibleReference || 'Sin referencia') + '</small> ' +
-            '<button type="button" data-remove-scene="' + scene.id + '" style="float:right;">Eliminar</button>' +
-          '</article>'
-        ).join('');
+            '<small>' + scene.duration + ' s · ' + escapeHtml(scene.bibleReference || 'Sin referencia') + '</small>' +
+            '<details style="margin:10px 0;"><summary>Prompt cinematográfico para IA</summary>' +
+              '<pre style="white-space:pre-wrap;overflow-wrap:anywhere;background:#151522;padding:10px;border-radius:8px;">' + escapeHtml(prompt) + '</pre>' +
+            '</details>' +
+            '<div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:8px;">' +
+              '<button type="button" data-copy-scene-prompt="' + scene.id + '">Copiar prompt IA</button>' +
+              '<button type="button" data-open-video-generator="' + scene.id + '">Abrir FreeGenVideo</button>' +
+              '<button type="button" data-add-scene-media="' + scene.id + '" data-media-kind="image">Añadir imagen a timeline</button>' +
+              '<button type="button" data-add-scene-media="' + scene.id + '" data-media-kind="video">Añadir video a timeline</button>' +
+              '<button type="button" data-remove-scene="' + scene.id + '">Eliminar</button>' +
+            '</div>' +
+          '</article>';
+        }).join('');
     }
     function escapeHtml(value) {
       return String(value).replace(/[&<>"']/g, char => ({
@@ -412,6 +437,57 @@
       status.textContent = 'Proyecto nuevo creado.';
       renderScenes();
     });
+    let selectedMediaSceneId = null;
+    byId('biblical-scene-media-file').addEventListener('change', async function (event) {
+      const file = event.target.files && event.target.files[0];
+      if (!file || !selectedMediaSceneId) return;
+      status.textContent = 'Importando archivo y colocándolo en la línea de tiempo...';
+      try {
+        if (typeof window.vizAddBiblicalMedia !== 'function') {
+          throw new Error('El editor todavía no terminó de iniciar. Recarga la página.');
+        }
+        await window.vizAddBiblicalMedia(file, selectedMediaSceneId);
+        status.textContent = '¡Listo! El archivo quedó colocado en la línea de tiempo en el tiempo de su escena.';
+      } catch (error) {
+        status.textContent = 'No se pudo añadir el archivo: ' + error.message;
+      }
+      selectedMediaSceneId = null;
+      event.target.value = '';
+    });
+
+    list.addEventListener('click', async function (event) {
+      const copyButton = event.target.closest('[data-copy-scene-prompt]');
+      if (copyButton) {
+        const project = engine.getProject();
+        const scene = project?.scenes.find(item => item.id === copyButton.dataset.copyScenePrompt);
+        if (!scene) return;
+        const prompt = buildScenePrompt(scene, project);
+        try {
+          await navigator.clipboard.writeText(prompt);
+          status.textContent = 'Prompt de la escena copiado. Pégalo en el generador de imágenes o video.';
+        } catch (_) {
+          status.textContent = 'Abre el apartado Prompt cinematográfico para copiar el texto manualmente.';
+        }
+        return;
+      }
+      const openButton = event.target.closest('[data-open-video-generator]');
+      if (openButton) {
+        window.open('https://freegen.video/', '_blank', 'noopener');
+        status.textContent = 'FreeGenVideo abierto. Copia el prompt de esta escena y genera tu video.';
+        return;
+      }
+      const mediaButton = event.target.closest('[data-add-scene-media]');
+      if (mediaButton) {
+        selectedMediaSceneId = mediaButton.dataset.addSceneMedia;
+        const picker = byId('biblical-scene-media-file');
+        picker.accept = mediaButton.dataset.mediaKind === 'video'
+          ? 'video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov'
+          : 'image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp';
+        picker.click();
+        return;
+      }
+    });
+
     list.addEventListener('click', function (event) {
       const button = event.target.closest('[data-remove-scene]');
       if (!button) return;
